@@ -3,12 +3,12 @@ namespace RoastIT.Core.Validation;
 /// <summary>User-facing texts for Settings → Data (settings spec §4).</summary>
 public static class BackupMessages
 {
-    public const string NotRoastline = "This file isn't a Roastline backup. Choose a file that ends in .roastline.";
+    public const string NotRoastline = "This file isn't a RoastIT backup. Choose a file that ends in .roastline.";
 
     public const string Unreadable = "Couldn't read that file. Try choosing it again.";
 
     public static string NewerVersion(string? appVersion) =>
-        $"This backup was made by a newer version of Roastline ({(string.IsNullOrWhiteSpace(appVersion) ? "unknown" : appVersion)}). Update the app first, then import it.";
+        $"This backup was made by a newer version of RoastIT ({(string.IsNullOrWhiteSpace(appVersion) ? "unknown" : appVersion)}). Update the app first, then import it.";
 
     public const string ExportFailed = "Couldn't create the backup file. Try again.";
 

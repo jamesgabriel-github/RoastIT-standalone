@@ -41,7 +41,7 @@ public partial class App : Application
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var window = new Window(new MainPage()) { Title = "Roastline" };
+		var window = new Window(new MainPage()) { Title = "RoastIT" };
 
 		// The app locks on every reopen: leaving the foreground locks it, and so does coming back (D6). The file picker and
 		// share sheet are the exception: ExternalActivityGuard lets the expected trip there and back through (Q11).

@@ -23,7 +23,7 @@
         <MauiXamlInflator>SourceGen</MauiXamlInflator>
 
         <!-- Display name -->
-        <ApplicationTitle>Roastline</ApplicationTitle>
+        <ApplicationTitle>RoastIT</ApplicationTitle>
 
         <!-- App Identifier: never change after the first install -->
         <ApplicationId>com.roastit.app</ApplicationId>

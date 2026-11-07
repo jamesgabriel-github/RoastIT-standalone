@@ -206,7 +206,7 @@ public sealed class BackupTests : IDisposable
 
         Assert.Equal(BackupFileStatus.NewerSchema, result.Status);
         Assert.Equal(
-            "This backup was made by a newer version of Roastline (2.4.0). Update the app first, then import it.",
+            "This backup was made by a newer version of RoastIT (2.4.0). Update the app first, then import it.",
             BackupService.ErrorFor(result));
     }
 

@@ -7,7 +7,7 @@ namespace RoastIT.Core.Exceptions;
 public class ValidationException(string message) : Exception(message);
 
 /// <summary>The app is locked (or not set up), so the action is refused.</summary>
-public class AccessDeniedException(string message = "Roastline is locked.") : Exception(message);
+public class AccessDeniedException(string message = "RoastIT is locked.") : Exception(message);
 
 /// <summary>A critical action ran without a valid, unexpired PIN confirmation.</summary>
 public class PinRequiredException(string message = "Enter your PIN to continue.") : Exception(message);

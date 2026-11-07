@@ -14,7 +14,7 @@
     <div class="brand">
         <div class="brand-mark"><Icon Name="flame" Size="19" StrokeWidth="1.6" /></div>
         <div class="brand-text">
-            <span class="brand-name">Roastline</span>
+            <span class="brand-name">RoastIT</span>
             <span class="brand-sub">Litson Haus</span>
         </div>
     </div>
@@ -201,7 +201,7 @@
     private ViewCopy Copy() => _view switch
     {
         LockView.Enter when _flow == LockFlow.Setup =>
-            new("Set up your PIN", "4 to 6 digits. Roastline asks for it every time the app opens.", "Enter 4–6 digits", "Next"),
+            new("Set up your PIN", "4 to 6 digits. RoastIT asks for it every time the app opens.", "Enter 4–6 digits", "Next"),
         LockView.Enter when _flow == LockFlow.Reset =>
             new("Choose a new PIN", "Your recovery code checked out. 4 to 6 digits.", "Enter 4–6 digits", "Next"),
         LockView.Enter =>
@@ -211,7 +211,7 @@
         LockView.Verify =>
             new("Enter your current PIN", "Confirm it's you before changing it.", "Enter your current PIN", "Next"),
         _ =>
-            new("Welcome back", "Enter your PIN to open Roastline.", "Enter your PIN", "Unlock"),
+            new("Welcome back", "Enter your PIN to open RoastIT.", "Enter your PIN", "Unlock"),
     };
 
     // ---- Submitting a PIN entry -----------------------------------------------------
@@ -301,7 +301,7 @@
                 var changed = await AppLock.ChangeAsync(_verifiedPin, newPin, _cts.Token);
                 if (changed.Succeeded)
                 {
-                    ShowDone("PIN updated", "Use your new PIN the next time Roastline locks. Your recovery code stays the same.", "Back to Settings", redirects: false);
+                    ShowDone("PIN updated", "Use your new PIN the next time RoastIT locks. Your recovery code stays the same.", "Back to Settings", redirects: false);
                 }
                 else
                 {

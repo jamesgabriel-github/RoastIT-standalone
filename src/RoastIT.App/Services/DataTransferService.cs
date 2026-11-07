@@ -39,7 +39,7 @@ public sealed class DataTransferService(
         {
             await Share.Default.RequestAsync(new ShareFileRequest
             {
-                Title = "Save your Roastline backup",
+                Title = "Save your RoastIT backup",
                 File = new ShareFile(exported.Path, "application/octet-stream"),
             });
         }
@@ -101,7 +101,7 @@ public sealed class DataTransferService(
         try
         {
             // Any file type: Android often can't map ".roastline" to a MIME type; the content is what gets checked.
-            file = await FilePicker.Default.PickAsync(new PickOptions { PickerTitle = "Choose a Roastline backup" });
+            file = await FilePicker.Default.PickAsync(new PickOptions { PickerTitle = "Choose a RoastIT backup" });
         }
         catch (Exception ex)
         {
