@@ -36,4 +36,7 @@ public static class AuditActions
 {
     public const string PinChanged = "pin.changed";
     public const string PinResetWithRecovery = "pin.reset_with_recovery";
+    public const string ProductCreated = "product.created";
+    public const string ProductUpdated = "product.updated";
+    public const string ProductActiveChanged = "product.active_changed";
 }

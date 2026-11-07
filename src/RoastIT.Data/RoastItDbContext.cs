@@ -13,6 +13,7 @@ public class RoastItDbContext(DbContextOptions<RoastItDbContext> options) : DbCo
     public DbSet<AppLockState> AppLock => Set<AppLockState>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AppMeta> AppMeta => Set<AppMeta>();
+    public DbSet<Product> Products => Set<Product>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

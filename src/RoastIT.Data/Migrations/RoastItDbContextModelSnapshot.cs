@@ -109,6 +109,49 @@ namespace RoastIT.Data.Migrations
 
                     b.ToTable("audit_logs", (string)null);
                 });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Product", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Active")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true)
+                        .HasColumnName("active");
+
+                    b.Property<int>("CookingTimeMin")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("cooking_time_min");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("name");
+
+                    b.Property<long>("Price")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("price");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("products", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_products_cooking_time", "cooking_time_min >= 1");
+
+                            t.HasCheckConstraint("ck_products_price", "price >= 0");
+                        });
+                });
 #pragma warning restore 612, 618
         }
     }

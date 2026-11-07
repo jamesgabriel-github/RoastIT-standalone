@@ -1,0 +1,22 @@
+@* One product (menu spec §3.5). Only the two buttons are tappable. *@
+<article class="pcard @(Product.Active ? null : "inactive")">
+    <div class="pcard-top">
+        <h2 class="pcard-name">@Product.Name</h2>
+        <StatusPill Kind="@(Product.Active ? "active" : "inactive")" Label="@(Product.Active ? "Active" : "Inactive")" />
+    </div>
+    <div class="pcard-price">
+        <span class="mono price">@Money.Format(Product.Price)</span>
+        <span class="muted">· @DurationFormat.Format(Product.CookingTimeMin) cook</span>
+    </div>
+    <p class="pcard-desc">@(string.IsNullOrWhiteSpace(Product.Description) ? "No description yet." : Product.Description)</p>
+    <div class="pcard-actions">
+        <button type="button" class="btn btn-sm" @onclick="() => OnEdit.InvokeAsync(Product)">Edit</button>
+        <button type="button" class="btn btn-sm" @onclick="() => OnToggleActive.InvokeAsync(Product)">@(Product.Active ? "Deactivate" : "Activate")</button>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public Product Product { get; set; } = default!;
+    [Parameter] public EventCallback<Product> OnEdit { get; set; }
+    [Parameter] public EventCallback<Product> OnToggleActive { get; set; }
+}

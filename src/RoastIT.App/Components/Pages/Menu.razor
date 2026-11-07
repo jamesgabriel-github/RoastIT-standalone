@@ -1,13 +1,183 @@
 @page "/menu"
+@implements IDisposable
+@inject ProductService Products
+@inject IChangeNotifier Changes
+@inject PinPromptService Pin
 @inject ToastService Toasts
 
-@* Phase 2 builds the real Menu screen. For now: an empty page. *@
 <PageHeading Title="Menu" Subtitle="Products, pricing, and availability" />
 
-<EmptyState>Your products will appear here. (Built in Phase 2.)</EmptyState>
+<label class="search">
+    <span class="sr-only">Search products</span>
+    <Icon Name="search" Size="16" />
+    <input class="input" type="search" enterkeyhint="search" placeholder="Search products" autocomplete="off"
+           @bind="Search" @bind:event="oninput" />
+</label>
 
-<Fab Label="Add product" OnClick="OnAddProduct" />
+<FilterChips AriaLabel="Filter by status" Items="Chips" Selected="StatusKey" SelectedChanged="OnStatusChanged" />
+
+<div class="list-meta">
+    <span class="muted">@ProductListing.CountLabel(_visible.Count)</span>
+    <div class="list-meta-actions">
+        <button type="button" class="meta-btn" @onclick="OpenSort">
+            <Icon Name="@(_options.Direction == SortDirection.Asc ? "sortAsc" : "sortDesc")" Size="14" />
+            <span>@ProductListing.SortLabel(_options.Field, _options.Direction)</span>
+        </button>
+    </div>
+</div>
+
+@if (_visible.Count == 0)
+{
+    if (_loaded)
+    {
+        <EmptyState>@ProductListing.EmptyMessage(_all.Count, _options.Search)</EmptyState>
+    }
+}
+else
+{
+    <div class="pgrid">
+        @foreach (var product in _visible)
+        {
+            <ProductCard @key="product.Id" Product="product" OnEdit="OpenEdit" OnToggleActive="ToggleActiveAsync" />
+        }
+    </div>
+}
+
+<Fab Label="Add product" OnClick="OpenAdd" />
+
+<ProductSheet Open="_sheetOpen" Editing="_editing" OnClose="CloseSheet" />
+
+<ProductSortSheet Open="_sortOpen" OnClose="CloseSort"
+                  Field="_options.Field" FieldChanged="OnSortFieldChanged"
+                  Direction="_options.Direction" DirectionChanged="OnSortDirectionChanged" />
 
 @code {
-    private void OnAddProduct() => Toasts.Show("Add product arrives in Phase 2", ToastDuration.Menu);
+    private IReadOnlyList<Product> _all = [];
+    private List<Product> _visible = [];
+    private ProductListOptions _options = ProductListOptions.Default;
+    private bool _loaded, _sheetOpen, _sortOpen;
+    private Product? _editing;
+
+    private string Search
+    {
+        get => _options.Search;
+        set { _options = _options with { Search = value ?? "" }; Refilter(); }
+    }
+
+    private string StatusKey => _options.Status.ToString().ToLowerInvariant();
+
+    // Counts are global: they ignore the search (menu spec §3.2).
+    private IReadOnlyList<ChipItem> Chips
+    {
+        get
+        {
+            var c = ProductListing.Counts(_all);
+            return
+            [
+                new("all", $"All · {c.All}"),
+                new("active", $"Active · {c.Active}"),
+                new("inactive", $"Inactive · {c.Inactive}"),
+            ];
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Changes.CatalogChanged += OnCatalogChanged;
+        await LoadAsync();
+    }
+
+    private void OnCatalogChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _all = await Products.ListAsync();
+            _loaded = true;
+            Refilter();
+        }
+        catch (AccessDeniedException)
+        {
+            // Locked while loading: the lock screen takes over; the list reloads when this page is shown again.
+        }
+    }
+
+    private void Refilter() => _visible = ProductListing.Apply(_all, _options);
+
+    private void OnStatusChanged(string key)
+    {
+        _options = _options with { Status = Enum.Parse<ProductStatusFilter>(key, ignoreCase: true) };
+        Refilter();
+    }
+
+    // ---- Sort -----------------------------------------------------------------
+
+    private void OpenSort() => _sortOpen = true;
+    private void CloseSort() => _sortOpen = false;
+
+    private void OnSortFieldChanged(ProductSortField field)
+    {
+        _options = _options with { Field = field }; // the direction is kept
+        Refilter();
+    }
+
+    private void OnSortDirectionChanged(SortDirection direction)
+    {
+        _options = _options with { Direction = direction };
+        Refilter();
+    }
+
+    // ---- Add / edit -----------------------------------------------------------
+
+    private void OpenAdd()
+    {
+        _editing = null;
+        _sheetOpen = true;
+    }
+
+    private void OpenEdit(Product product)
+    {
+        _editing = product;
+        _sheetOpen = true;
+    }
+
+    private void CloseSheet() => _sheetOpen = false;
+
+    // ---- Activate / deactivate (menu spec §5) ----------------------------------
+
+    private async Task ToggleActiveAsync(Product product)
+    {
+        var activate = !product.Active;
+        var prompt = await Pin.RequestAsync(
+            activate ? $"Make {product.Name} available for booking again." : $"Hide {product.Name} from new bookings.",
+            activate ? "Activate" : "Deactivate",
+            PinScope.Menu);
+        if (!prompt.Confirmed) return;
+
+        try
+        {
+            var saved = await Products.SetActiveAsync(product.Id, activate, prompt.Confirmation);
+            Toasts.Show(activate ? $"{saved.Name} is available again" : $"{saved.Name} hidden from new bookings", ToastDuration.Menu);
+        }
+        catch (PinRequiredException)
+        {
+            Toasts.Show("That PIN check expired. Try again.", ToastDuration.Menu);
+        }
+        catch (StaleStateException ex)
+        {
+            Toasts.Show(ex.Message, ToastDuration.Menu);
+            await LoadAsync();
+        }
+        catch (AccessDeniedException)
+        {
+            // The app locked: the lock screen takes over.
+        }
+    }
+
+    public void Dispose() => Changes.CatalogChanged -= OnCatalogChanged;
 }

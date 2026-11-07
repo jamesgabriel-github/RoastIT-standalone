@@ -1,0 +1,136 @@
+@inject ProductService Products
+@inject PinPromptService Pin
+@inject ToastService Toasts
+
+@* Add / Edit product full sheet (menu spec §6). Validates first, then asks for the Menu PIN, then saves through ProductService. *@
+<Sheet Open="Open" OnClose="OnClose" Title="@(IsEdit ? "Edit product" : "Add product")">
+    <ChildContent>
+        <form id="product-form" class="form-stack" novalidate @onsubmit="SubmitAsync">
+            <label class="field">
+                <span class="field-label">Product name</span>
+                <input class="input" type="text" @ref="_nameInput" @bind="_name" @bind:event="oninput" placeholder="e.g. Lechon Belly"
+                       autocomplete="off" enterkeyhint="next" maxlength="@ProductLimits.NameMaxLength" />
+            </label>
+            <div class="field-row">
+                <label class="field">
+                    <span class="field-label">Price</span>
+                    <span class="money-input">
+                        <span class="prefix">₱</span>
+                        <input class="input" type="number" inputmode="decimal" min="0" step="0.01" @ref="_priceInput" @bind="_price" @bind:event="oninput" placeholder="0" />
+                    </span>
+                </label>
+                <label class="field">
+                    <span class="field-label">Cooking time (min)</span>
+                    <input class="input" type="number" inputmode="numeric" min="1" step="1" @ref="_cookingInput" @bind="_cooking" @bind:event="oninput" placeholder="30" />
+                </label>
+            </div>
+            <label class="field">
+                <span class="field-label">Description <span class="opt">(optional)</span></span>
+                <textarea class="input" rows="3" @ref="_descriptionInput" @bind="_description" @bind:event="oninput"
+                          placeholder="What makes this product worth ordering" maxlength="@ProductLimits.DescriptionMaxLength"></textarea>
+            </label>
+            <div class="toggle-card">
+                <div class="toggle-text">
+                    <span class="toggle-title">Available for booking</span>
+                    <span class="caption">Inactive products are hidden from the new-booking form.</span>
+                </div>
+                <Switch @bind-Checked="_active" AriaLabel="Available for booking" />
+            </div>
+            @if (_error.Length > 0)
+            {
+                <p class="form-error" role="alert">@_error</p>
+            }
+        </form>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn" @onclick="OnClose">Cancel</button>
+        <button type="submit" form="product-form" class="btn btn-primary" disabled="@_busy">@(IsEdit ? "Save changes" : "Add product")</button>
+    </Footer>
+</Sheet>
+
+@code {
+    private string _name = "", _price = "", _cooking = "", _description = "", _error = "";
+    private bool _active = true, _busy, _wasOpen;
+    private ElementReference _nameInput, _priceInput, _cookingInput, _descriptionInput;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The product being edited; null = adding.</summary>
+    [Parameter] public Product? Editing { get; set; }
+
+    private bool IsEdit => Editing is not null;
+
+    protected override void OnParametersSet()
+    {
+        // Each time the sheet opens, the form starts fresh (blank, or the product's current values).
+        if (Open && !_wasOpen) LoadForm();
+        _wasOpen = Open;
+    }
+
+    private void LoadForm()
+    {
+        var p = Editing;
+        _name = p?.Name ?? "";
+        _price = p is null ? "" : Money.ToFieldText(p.Price);
+        _cooking = p is null ? "" : p.CookingTimeMin.ToString();
+        _description = p?.Description ?? "";
+        _active = p?.Active ?? true;
+        _error = "";
+        _busy = false;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+
+        // 1. Validate first: the PIN prompt only appears for a valid form. One message at a time, first failing field.
+        var draft = new ProductDraft(_name, _price, _cooking, _description, _active);
+        if (draft.FirstFailure() is { } failure)
+        {
+            _error = failure.Message;
+            await FocusAsync(failure.Field);
+            return;
+        }
+        _error = "";
+        var input = draft.ToInput();
+        var product = Editing;
+
+        _busy = true;
+        try
+        {
+            // 2. PIN, every time (Menu scope). Cancelling keeps the sheet and the typed values.
+            var prompt = await Pin.RequestAsync(
+                product is null ? $"Add {input.Name} to the menu." : $"Save changes to {input.Name}.",
+                product is null ? "Add" : "Save",
+                PinScope.Menu);
+            if (!prompt.Confirmed) return;
+
+            // 3. The service re-checks the lock, the PIN and the rules.
+            var saved = product is null
+                ? await Products.CreateAsync(input, prompt.Confirmation)
+                : await Products.UpdateAsync(product.Id, input, prompt.Confirmation);
+
+            Toasts.Show(product is null ? $"Added {saved.Name}" : $"Saved {saved.Name}", ToastDuration.Menu);
+            await OnClose.InvokeAsync();
+        }
+        catch (ValidationException ex) { _error = ex.Message; }
+        catch (PinRequiredException) { _error = "That PIN check expired. Try saving again."; }
+        catch (StaleStateException ex) { _error = ex.Message; }
+        catch (AccessDeniedException) { /* the app locked: the lock screen takes over */ }
+        finally { _busy = false; }
+    }
+
+    private async Task FocusAsync(ProductField field)
+    {
+        var target = field switch
+        {
+            ProductField.Price => _priceInput,
+            ProductField.CookingTime => _cookingInput,
+            ProductField.Description => _descriptionInput,
+            _ => _nameInput,
+        };
+        try { await target.FocusAsync(); }
+        catch (JSException) { /* focus is a nicety */ }
+    }
+}

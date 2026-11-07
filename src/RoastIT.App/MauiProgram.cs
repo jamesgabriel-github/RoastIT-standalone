@@ -32,6 +32,11 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAppBackgrounder, AppBackgrounder>();
 		builder.Services.AddSingleton<PinPromptService>();
 
+		// Menu catalog (Phase 2). The notifier is a singleton so every open screen hears the same events.
+		builder.Services.AddSingleton<IChangeNotifier, ChangeNotifier>();
+		builder.Services.AddSingleton<IProductStore, EfProductStore>();
+		builder.Services.AddScoped<ProductService>();
+
 		builder.Services.AddSingleton<IPreferences>(_ => Preferences.Default);
 		builder.Services.AddSingleton<PreferencesStore>();
 		builder.Services.AddSingleton<ThemeService>();
