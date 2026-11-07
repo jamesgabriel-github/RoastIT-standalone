@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Roastline — Unlock</title>
+<script>
+  // Apply the saved theme before first paint (Settings → Appearance): 'light' (default),
+  // 'dark', or 'system' (match the device's light/dark setting, and follow it live).
+  // In the real app this comes from MAUI Preferences. Storage can be unavailable — light.
+  (function () {
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function apply() {
+      var t = 'light';
+      try { t = localStorage.getItem('roastline.theme') || 'light'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'system' && !!mq && mq.matches);
+      if (dark) document.documentElement.dataset.theme = 'dark';
+      else delete document.documentElement.dataset.theme;
+    }
+    apply();
+    try { if (mq) mq.addEventListener('change', apply); } catch (e) {}
+    window.__applyTheme = apply;
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /*
+    Roastline — standalone (mobile) app lock prototype, PIN only.
+    Replaces the web sign-in page: the standalone app has no admin accounts,
+    so opening the app only asks for one PIN, which the owner chooses on
+    first run and can change later. See
+    standalone/web-to-blazor-hybrid-transition.md §4 for the behavior spec.
+  */
+  :root {
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Consolas, monospace;
+    --bg: #EEEDE6;
+    --surface: #FFFFFF;
+    --surface-2: #F6F4EF;
+    --border: #E1DDD1;
+    --fg: #221E19;
+    --fg-muted: #847C6D;
+    --accent: #A8471F;
+    --accent-fg: #FFFFFF;
+    --danger: #C1392B;
+    --ok: #2E8B52;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15120E;
+    --surface: #1F1B16;
+    --surface-2: #29241E;
+    --border: #3A3229;
+    --fg: #F2EDE4;
+    --fg-muted: #A79E8F;
+    --accent: #C9612F;
+    --accent-fg: #FFFFFF;
+    --danger: #E25B4D;
+    --ok: #4CAF72;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: var(--font-body); font-size: 14px; line-height: 1.45; color: var(--fg);
+    -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
+  }
+  button, input { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::placeholder { color: var(--fg-muted); opacity: 1; }
+
+  .lock {
+    min-height: 100vh; min-height: 100dvh;
+    max-width: 420px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 18px;
+    padding: calc(16px + var(--safe-top)) 24px calc(20px + var(--safe-bottom));
+  }
+  .lock-top { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .brand-text { display: flex; flex-direction: column; }
+  .brand-name { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; line-height: 1.2; }
+  .brand-sub { font-size: 11.5px; color: var(--fg-muted); }
+  .top-link { background: none; border: none; color: var(--accent); font-weight: 600; font-size: 14px; padding: 10px 4px; text-decoration: none; }
+
+  .lock-main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+  .lock-head { text-align: center; display: flex; flex-direction: column; gap: 6px; }
+  .lock-head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .lock-head p { margin: 0; color: var(--fg-muted); font-size: 14px; }
+
+  .dots { display: flex; justify-content: center; align-items: center; gap: 14px; height: 24px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--fg); }
+  .dots-hint { color: var(--fg-muted); font-size: 13px; }
+  .shake { animation: shake 0.35s; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+
+  .msg { min-height: 20px; text-align: center; font-size: 13px; font-weight: 600; }
+  .msg.error { color: var(--danger); }
+
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 300px; margin: 0 auto; }
+  .key {
+    height: 64px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface);
+    font-family: var(--font-mono); font-size: 24px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+  }
+  .key:active { background: var(--surface-2); }
+  .key.fn { font-family: var(--font-body); font-size: 15px; background: transparent; border-color: transparent; color: var(--fg-muted); }
+  .key.ok { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-family: var(--font-body); font-size: 15px; font-weight: 700; }
+  .key[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+  .links { display: flex; justify-content: center; gap: 16px; }
+  .link { background: none; border: none; color: var(--accent); font-weight: 600; font-size: 14px; padding: 10px 6px; }
+
+  form.stack { display: flex; flex-direction: column; gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+  .input {
+    width: 100%; height: 50px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--surface); padding: 0 14px; font-size: 16px;
+  }
+  .input.code-input { font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; text-align: center; }
+  .btn {
+    width: 100%; height: 50px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface);
+    font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  .code-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .code { font-family: var(--font-mono); font-size: 22px; font-weight: 600; letter-spacing: 0.06em; }
+  .copy-btn { height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+  .note { font-size: 12.5px; color: var(--fg-muted); text-align: center; margin: 0; }
+  .warn { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); color: var(--fg); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+
+  .success { width: 60px; height: 60px; border-radius: 50%; margin: 0 auto; background: color-mix(in srgb, var(--ok) 14%, var(--surface)); border: 1px solid var(--ok); color: var(--ok); display: flex; align-items: center; justify-content: center; }
+
+  .proto { border: 1px dashed var(--border); border-radius: 12px; background: var(--surface-2); padding: 10px 12px; font-size: 12px; color: var(--fg-muted); }
+  .proto summary { cursor: pointer; font-weight: 600; color: var(--fg); }
+  .proto p { margin: 8px 0 0; }
+  .proto code { font-family: var(--font-mono); font-size: 11.5px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--fg); }
+  .proto-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .proto-actions button { height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; font-weight: 600; }
+
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + var(--safe-bottom)); z-index: 80;
+    background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 13.5px;
+    box-shadow: 0 8px 20px rgba(34,30,25,0.22); max-width: calc(100vw - 32px);
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================================
+   Roastline — standalone app lock (PIN only)
+   -------------------------------------------------------------------------------------
+   Same architecture as the other prototypes: one `state` object, Actions that mutate
+   it, a full re-render of #app, and event delegation on data-action.
+
+   Flows
+   - First run (no PIN yet): choose a 4–6 digit PIN → confirm → recovery code shown
+     once → opens Bookings.
+   - Unlock: PIN keypad. 5 wrong tries → 30-second wait.
+   - Forgot: enter the recovery code → choose a new PIN → confirm → a NEW recovery
+     code is shown (the old one stops working) → opens Bookings.
+   - Change (Settings → Update PIN, ?mode=change): current PIN → new PIN →
+     confirm → done. Recovery code stays the same.
+
+   URL modes: (none) = first run · ?mode=unlock · ?mode=change
+   In the real app the PIN and recovery code are stored hashed in SQLite.
+   ===================================================================================== */
+
+  const PIN_MIN = 4, PIN_MAX = 6;
+  const MAX_ATTEMPTS = 5, LOCKOUT_SECONDS = 30;
+  const SEED_PIN = '1234';
+  const SEED_RECOVERY = 'RSTL-7Q4M-K2PD';
+  const BOOKINGS_URL = 'bookings-prototype.html';
+  const SETTINGS_URL = 'settings-prototype.html'; // "Update PIN" is opened from Settings
+
+  // ---------------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------------
+  function esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function icon(paths, size) {
+    size = size || 16;
+    return '<svg viewBox="0 0 20 20" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+  }
+  const ICONS = {
+    flame: '<path d="M10 2.5c2 3 4.5 5 4.5 8.5a4.5 4.5 0 01-9 0c0-1.3.5-2.2 1.2-3.1.2 1 .9 1.6 1.6 1.6.9 0 1.3-.8 1.1-1.6-.3-1.3-.6-2.6.6-5.4z"></path>',
+    check: '<polyline points="4,10.5 8,14.5 16,5.5"></polyline>',
+    copy: '<rect x="6.5" y="6.5" width="10" height="10" rx="2"></rect><path d="M13.5 6.5V5a1.5 1.5 0 00-1.5-1.5H5A1.5 1.5 0 003.5 5v7A1.5 1.5 0 005 13.5h1.5"></path>',
+    backspace: '<path d="M7 5h9.5v10H7l-4.5-5z"></path><line x1="10" y1="8" x2="14" y2="12"></line><line x1="14" y1="8" x2="10" y2="12"></line>'
+  };
+  // Recovery codes avoid look-alike characters (0/O, 1/I/L).
+  function generateRecoveryCode() {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const bytes = new Uint8Array(12);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+    else bytes.forEach((_, i) => { bytes[i] = Math.floor(Math.random() * 256); });
+    let raw = '';
+    bytes.forEach((b) => { raw += alphabet[b % alphabet.length]; });
+    return raw.slice(0, 4) + '-' + raw.slice(4, 8) + '-' + raw.slice(8, 12);
+  }
+  function normalizeCode(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+  // ---------------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------------
+  const params = new URLSearchParams(location.search);
+  const mode = params.get('mode'); // null | 'unlock' | 'change'
+
+  const state = {
+    pin: null,              // hashed in the real app
+    recoveryCode: null,
+    view: 'enter',          // enter | confirm | recovery | unlock | forgot | verify | done
+    flow: 'setup',          // setup | reset | change — which flow enter/confirm belong to
+    entry: '',              // keypad buffer
+    firstEntry: '',         // PIN typed on "enter", checked on "confirm"
+    codeInput: '',
+    message: '', shake: false,
+    failed: 0, lockedUntil: 0,
+    savedAck: false,
+    done: null,             // { title, text, cta, redirect }
+    toast: ''
+  };
+
+  // Prototype only: the PIN is shared with the other prototype files through browser storage
+  // so their "enter your PIN to continue" checks use the same PIN. The real app stores only
+  // a hash in SQLite.
+  const PIN_STORAGE_KEY = 'roastline.pin';
+  function storedPin() { try { return localStorage.getItem(PIN_STORAGE_KEY); } catch (e) { return null; } }
+  function storePin(pin) { try { if (pin) localStorage.setItem(PIN_STORAGE_KEY, pin); else localStorage.removeItem(PIN_STORAGE_KEY); } catch (e) { /* this page only */ } }
+  function seedPin() { state.pin = storedPin() || SEED_PIN; state.recoveryCode = SEED_RECOVERY; }
+  if (mode === 'unlock') { seedPin(); state.view = 'unlock'; }
+  else if (mode === 'change') { seedPin(); state.view = 'verify'; state.flow = 'change'; }
+
+  // ---------------------------------------------------------------------------------
+  // Lockout
+  // ---------------------------------------------------------------------------------
+  let lockTimer = null;
+  function isLockedOut() { return Date.now() < state.lockedUntil; }
+  function secondsLeft() { return Math.max(0, Math.ceil((state.lockedUntil - Date.now()) / 1000)); }
+  function startLockTimer() {
+    if (lockTimer) clearInterval(lockTimer);
+    lockTimer = setInterval(() => {
+      if (!isLockedOut()) {
+        clearInterval(lockTimer); lockTimer = null;
+        state.message = ''; state.lockedUntil = 0;
+      }
+      render();
+    }, 1000);
+  }
+  function registerFailure(wrongMessage) {
+    state.failed += 1;
+    state.entry = '';
+    state.shake = true;
+    if (state.failed >= MAX_ATTEMPTS) {
+      state.failed = 0;
+      state.lockedUntil = Date.now() + LOCKOUT_SECONDS * 1000;
+      state.message = '';
+      startLockTimer();
+    } else {
+      const left = MAX_ATTEMPTS - state.failed;
+      state.message = wrongMessage + ' ' + left + (left === 1 ? ' try' : ' tries') + ' left.';
+    }
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------------
+  function resetTransient() { state.entry = ''; state.firstEntry = ''; state.codeInput = ''; state.message = ''; }
+  function goTo(view) { resetTransient(); state.view = view; render(); }
+  function goBookings() { location.href = BOOKINGS_URL; }
+  function toast(msg) {
+    state.toast = msg; render();
+    setTimeout(() => { if (state.toast === msg) { state.toast = ''; render(); } }, 2400);
+  }
+
+  const Actions = {
+    key(d) {
+      if (isLockedOut() || state.entry.length >= PIN_MAX) return;
+      state.entry += d; state.message = ''; render();
+    },
+    backspace() { if (isLockedOut()) return; state.entry = state.entry.slice(0, -1); render(); },
+    submitKeypad() {
+      if (isLockedOut()) return;
+      if (state.entry.length < PIN_MIN) {
+        state.message = 'Use ' + PIN_MIN + ' to ' + PIN_MAX + ' digits.'; state.shake = true; render(); return;
+      }
+      switch (state.view) {
+        case 'enter':
+          state.firstEntry = state.entry; state.entry = ''; state.message = ''; state.view = 'confirm'; render(); return;
+        case 'confirm':
+          if (state.entry !== state.firstEntry) {
+            state.firstEntry = ''; state.entry = ''; state.view = 'enter';
+            state.message = "PINs didn't match. Choose your PIN again."; state.shake = true;
+            render(); return;
+          }
+          savePin(state.entry); return;
+        case 'unlock':
+        case 'verify':
+          checkCurrent(state.entry); return;
+        default: return;
+      }
+    },
+
+    openForgot() { goTo('forgot'); },
+    backToUnlock() { goTo('unlock'); },
+    submitRecovery() {
+      if (isLockedOut()) return;
+      if (!normalizeCode(state.codeInput)) { state.message = 'Enter your recovery code.'; render(); return; }
+      if (normalizeCode(state.codeInput) === normalizeCode(state.recoveryCode)) {
+        state.failed = 0; state.flow = 'reset'; goTo('enter'); return;
+      }
+      registerFailure("That recovery code isn't right.");
+      render();
+    },
+
+    toggleAck(checked) { state.savedAck = checked; render(); },
+    copyCode() {
+      const code = state.recoveryCode;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => toast('Recovery code copied')).catch(() => toast('Copy not available — write it down'));
+      } else {
+        toast('Copy not available — write it down');
+      }
+    },
+    finishRecovery() {
+      if (!state.savedAck) return;
+      showDone({ title: state.flow === 'reset' ? 'PIN reset' : "You're all set", text: 'Opening Bookings…', cta: 'Open Bookings', redirect: true });
+    },
+
+    // ---- prototype controls ----
+    protoFirstRun() {
+      state.pin = null; state.recoveryCode = null; state.flow = 'setup'; storePin(null);
+      state.failed = 0; state.lockedUntil = 0; state.savedAck = false; goTo('enter');
+    },
+    protoUnlock() { seedPin(); state.flow = 'setup'; state.failed = 0; state.lockedUntil = 0; goTo('unlock'); },
+    protoChange() {
+      if (!state.pin) seedPin();
+      state.flow = 'change'; state.failed = 0; state.lockedUntil = 0; goTo('verify');
+    }
+  };
+
+  function checkCurrent(value) {
+    if (state.pin && value === state.pin) {
+      state.failed = 0;
+      if (state.view === 'verify') { state.flow = 'change'; goTo('enter'); }
+      else showDone({ title: 'Unlocked', text: 'Opening Bookings…', cta: 'Open Bookings', redirect: true });
+      return;
+    }
+    registerFailure('Incorrect PIN.');
+    render();
+  }
+
+  function savePin(pin) {
+    state.pin = pin;
+    storePin(pin);
+    resetTransient();
+    if (state.flow === 'change') {
+      showDone({ title: 'PIN updated', text: 'Use your new PIN the next time Roastline locks. Your recovery code stays the same.', cta: 'Back to Settings', href: SETTINGS_URL, redirect: false });
+      return;
+    }
+    // setup or reset → a fresh recovery code, shown once
+    state.recoveryCode = generateRecoveryCode();
+    state.savedAck = false;
+    state.view = 'recovery';
+    render();
+  }
+
+  function showDone(done) {
+    resetTransient();
+    state.done = done;
+    state.view = 'done';
+    render();
+    if (done.redirect) setTimeout(goBookings, 1400);
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Templates
+  // ---------------------------------------------------------------------------------
+  function renderTop() {
+    let right = '';
+    if (state.flow === 'change' && (state.view === 'verify' || state.view === 'enter' || state.view === 'confirm')) {
+      right = '<a class="top-link" href="' + SETTINGS_URL + '">Cancel</a>';
+    } else if (state.view === 'forgot') {
+      right = '<button type="button" class="top-link" data-action="back-to-unlock">Back</button>';
+    }
+    return `
+      <div class="lock-top">
+        <div class="brand">
+          <div class="brand-mark"><svg viewBox="0 0 20 20" width="19" height="19" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${ICONS.flame}</svg></div>
+          <div class="brand-text"><span class="brand-name">Roastline</span><span class="brand-sub">Litson Haus</span></div>
+        </div>
+        ${right}
+      </div>`;
+  }
+
+  function renderMessage() {
+    if (isLockedOut()) return `<div class="msg error" role="alert">Too many tries. Try again in ${secondsLeft()}s.</div>`;
+    return state.message ? `<div class="msg error" role="alert">${esc(state.message)}</div>` : '<div class="msg"></div>';
+  }
+
+  function renderDots(hint) {
+    const n = state.entry.length;
+    const inner = n === 0
+      ? `<span class="dots-hint">${esc(hint)}</span>`
+      : Array.from({ length: n }, () => '<span class="dot"></span>').join('');
+    return `<div class="dots ${state.shake ? 'shake' : ''}" aria-live="polite" aria-label="${n} digits entered">${inner}</div>`;
+  }
+
+  function renderKeypad(okLabel) {
+    const locked = isLockedOut();
+    const dis = locked ? 'disabled' : '';
+    const digits = ['1','2','3','4','5','6','7','8','9'].map((d) => `<button type="button" class="key" data-action="key" data-digit="${d}" ${dis}>${d}</button>`).join('');
+    const okDisabled = locked || state.entry.length < PIN_MIN ? 'disabled' : '';
+    return `
+      <div class="keypad" role="group" aria-label="PIN keypad">
+        ${digits}
+        <button type="button" class="key fn" data-action="backspace" aria-label="Delete" ${dis}>${icon(ICONS.backspace, 22)}</button>
+        <button type="button" class="key" data-action="key" data-digit="0" ${dis}>0</button>
+        <button type="button" class="key ok" data-action="submit-keypad" ${okDisabled}>${esc(okLabel)}</button>
+      </div>`;
+  }
+
+  function keypadScreen(title, subtitle, hint, okLabel, extra) {
+    return `
+      <div class="lock-main">
+        <div class="lock-head"><h1>${title}</h1><p>${subtitle}</p></div>
+        ${renderDots(hint)}
+        ${renderMessage()}
+        ${renderKeypad(okLabel)}
+        ${extra || ''}
+      </div>`;
+  }
+
+  function viewEnter() {
+    const copy = {
+      setup: ['Set up your PIN', PIN_MIN + ' to ' + PIN_MAX + ' digits. Roastline asks for it every time the app opens.'],
+      reset: ['Choose a new PIN', 'Your recovery code checked out. ' + PIN_MIN + ' to ' + PIN_MAX + ' digits.'],
+      change: ['Choose a new PIN', PIN_MIN + ' to ' + PIN_MAX + ' digits.']
+    }[state.flow] || ['Choose a PIN', ''];
+    return keypadScreen(copy[0], copy[1], 'Enter ' + PIN_MIN + '–' + PIN_MAX + ' digits', 'Next');
+  }
+  function viewConfirm() { return keypadScreen('Confirm your PIN', 'Enter the same PIN again.', 'Re-enter your PIN', 'Save'); }
+  function viewUnlock() {
+    return keypadScreen('Welcome back', 'Enter your PIN to open Roastline.', 'Enter your PIN', 'Unlock',
+      '<div class="links"><button type="button" class="link" data-action="open-forgot">Forgot PIN?</button></div>');
+  }
+  function viewVerify() { return keypadScreen('Enter your current PIN', "Confirm it's you before changing it.", 'Enter your current PIN', 'Next'); }
+
+  function viewRecovery() {
+    return `
+      <div class="lock-main">
+        <div class="lock-head">
+          <h1>Save your recovery code</h1>
+          <p>If you forget your PIN, this code is the only way back in.</p>
+        </div>
+        <div class="code-card">
+          <span class="code">${esc(state.recoveryCode)}</span>
+          <button type="button" class="copy-btn" data-action="copy-code">${icon(ICONS.copy, 15)} Copy</button>
+        </div>
+        ${state.flow === 'reset' ? '<div class="warn">Your old recovery code no longer works.</div>' : ''}
+        <div class="warn">Without this code, a forgotten PIN means reinstalling the app — which erases all bookings on this device.</div>
+        <label class="check"><input type="checkbox" data-action="toggle-ack" ${state.savedAck ? 'checked' : ''} /> I've written this code down somewhere safe.</label>
+        <button type="button" class="btn btn-primary" data-action="finish-recovery" ${state.savedAck ? '' : 'disabled'}>Continue</button>
+      </div>`;
+  }
+
+  function viewForgot() {
+    return `
+      <div class="lock-main">
+        <div class="lock-head"><h1>Use your recovery code</h1><p>It's the 12-character code you saved when you set up your PIN.</p></div>
+        <form class="stack" data-form="recovery" novalidate>
+          <div class="field">
+            <label for="codeInput">Recovery code</label>
+            <input class="input code-input" id="codeInput" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" data-input="codeInput" value="${esc(state.codeInput)}" ${isLockedOut() ? 'disabled' : ''} />
+          </div>
+          ${renderMessage()}
+          <button type="submit" class="btn btn-primary" ${isLockedOut() ? 'disabled' : ''}>Verify code</button>
+        </form>
+        <p class="note">Lost the code too? The only option left is reinstalling the app, which erases all bookings on this device unless you have a backup.</p>
+      </div>`;
+  }
+
+  function viewDone() {
+    const d = state.done || { title: 'Done', text: '', cta: 'Open Bookings' };
+    return `
+      <div class="lock-main">
+        <div class="success">${icon(ICONS.check, 26)}</div>
+        <div class="lock-head"><h1>${esc(d.title)}</h1><p>${esc(d.text)}</p></div>
+        <a class="btn btn-primary" href="${d.href || BOOKINGS_URL}" style="text-decoration:none;">${esc(d.cta)}</a>
+      </div>`;
+  }
+
+  function renderProtoPanel() {
+    const line = state.pin
+      ? `Current PIN: <code>${esc(state.pin)}</code> · Recovery code: <code>${esc(state.recoveryCode)}</code>`
+      : 'No PIN set yet (first run).';
+    return `
+      <details class="proto">
+        <summary>Prototype controls</summary>
+        <p>${line}</p>
+        <div class="proto-actions">
+          <button type="button" data-action="proto-first-run">First run</button>
+          <button type="button" data-action="proto-unlock">Unlock flow</button>
+          <button type="button" data-action="proto-change">Change PIN flow</button>
+        </div>
+      </details>`;
+  }
+
+  const VIEWS = { enter: viewEnter, confirm: viewConfirm, recovery: viewRecovery, unlock: viewUnlock, verify: viewVerify, forgot: viewForgot, done: viewDone };
+
+  const appEl = document.getElementById('app');
+  function render() {
+    const view = VIEWS[state.view] || viewEnter;
+    appEl.innerHTML = `
+      <div class="lock">
+        ${renderTop()}
+        ${view()}
+        ${renderProtoPanel()}
+      </div>
+      ${state.toast ? `<div class="toast" role="status">${esc(state.toast)}</div>` : ''}`;
+    if (state.shake) setTimeout(() => { state.shake = false; }, 400);
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Events
+  // ---------------------------------------------------------------------------------
+  appEl.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || el.disabled) return;
+    switch (el.dataset.action) {
+      case 'key': Actions.key(el.dataset.digit); break;
+      case 'backspace': Actions.backspace(); break;
+      case 'submit-keypad': Actions.submitKeypad(); break;
+      case 'open-forgot': Actions.openForgot(); break;
+      case 'back-to-unlock': Actions.backToUnlock(); break;
+      case 'copy-code': Actions.copyCode(); break;
+      case 'finish-recovery': Actions.finishRecovery(); break;
+      case 'proto-first-run': Actions.protoFirstRun(); break;
+      case 'proto-unlock': Actions.protoUnlock(); break;
+      case 'proto-change': Actions.protoChange(); break;
+      default: break;
+    }
+  });
+  appEl.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-action="toggle-ack"]');
+    if (el) Actions.toggleAck(el.checked);
+  });
+  // Typing in the recovery-code field only updates state — no re-render, so the keyboard stays open.
+  appEl.addEventListener('input', (e) => {
+    const key = e.target.dataset && e.target.dataset.input;
+    if (key) state[key] = e.target.value;
+  });
+  appEl.addEventListener('submit', (e) => {
+    const form = e.target.closest('[data-form="recovery"]');
+    if (!form) return;
+    e.preventDefault();
+    Actions.submitRecovery();
+  });
+  // Physical keyboard support for the keypad (desktop testing, tablets with keyboards).
+  document.addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return;
+    if (['enter', 'confirm', 'unlock', 'verify'].indexOf(state.view) === -1) return;
+    if (/^[0-9]$/.test(e.key)) { Actions.key(e.key); e.preventDefault(); }
+    else if (e.key === 'Backspace') { Actions.backspace(); e.preventDefault(); }
+    else if (e.key === 'Enter') { Actions.submitKeypad(); e.preventDefault(); }
+  });
+
+  render();
+</script>
+</body>
+</html>

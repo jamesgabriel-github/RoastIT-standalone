@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Roastline — Menu</title>
+<script>
+  // Apply the saved theme before first paint (Settings → Appearance): 'light' (default),
+  // 'dark', or 'system' (match the device's light/dark setting, and follow it live).
+  // In the real app this comes from MAUI Preferences. Storage can be unavailable — light.
+  (function () {
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function apply() {
+      var t = 'light';
+      try { t = localStorage.getItem('roastline.theme') || 'light'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'system' && !!mq && mq.matches);
+      if (dark) document.documentElement.dataset.theme = 'dark';
+      else delete document.documentElement.dataset.theme;
+    }
+    apply();
+    try { if (mq) mq.addEventListener('change', apply); } catch (e) {}
+    window.__applyTheme = apply;
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* ================= Shared mobile shell (same block in bookings-prototype.html and settings-prototype.html) ================= */
+  :root {
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Consolas, monospace;
+    --bg: #EEEDE6;
+    --surface: #FFFFFF;
+    --surface-2: #F6F4EF;
+    --border: #E1DDD1;
+    --fg: #221E19;
+    --fg-muted: #847C6D;
+    --accent: #A8471F;
+    --accent-fg: #FFFFFF;
+    --status-pending: #8A8275;
+    --status-cooking: #D9731E;
+    --status-cooked: #2E8B52;
+    --status-completed: #6B7280;
+    --status-cancelled: #C1392B;
+    --nav-h: 60px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15120E;
+    --surface: #1F1B16;
+    --surface-2: #29241E;
+    --border: #3A3229;
+    --fg: #F2EDE4;
+    --fg-muted: #A79E8F;
+    --accent: #C9612F;
+    --accent-fg: #FFFFFF;
+    --status-pending: #A39A8A;
+    --status-cooking: #E8893A;
+    --status-cooked: #4CAF72;
+    --status-completed: #959CA8;
+    --status-cancelled: #E25B4D;
+  }
+  :root[data-theme="dark"] .backdrop, :root[data-theme="dark"] .dialog-backdrop { background: rgba(0,0,0,0.6); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: var(--font-body); font-size: 14px; line-height: 1.45; color: var(--fg);
+    -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
+  }
+  body.no-scroll { overflow: hidden; }
+  button, input, select, textarea { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::placeholder { color: var(--fg-muted); opacity: 1; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--fg-muted); }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  .app { min-height: 100vh; padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 84px); }
+  .topbar {
+    position: sticky; top: 0; z-index: 20; padding-top: var(--safe-top);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 56px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .topbar-titles { display: flex; flex-direction: column; min-width: 0; }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  .topbar .sub { font-size: 12px; color: var(--fg-muted); }
+  .content { max-width: 760px; margin: 0 auto; padding: 14px 16px 0; display: flex; flex-direction: column; gap: 12px; }
+
+  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom); }
+  .bottomnav-inner { max-width: 760px; margin: 0 auto; display: flex; }
+  .navitem {
+    flex: 1; min-height: var(--nav-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 11.5px; font-weight: 600; color: var(--fg-muted); text-decoration: none; background: none; border: none; padding: 6px 4px;
+  }
+  .navitem.active { color: var(--accent); }
+  .fab {
+    position: fixed; z-index: 25;
+    right: max(16px, calc((100vw - 760px) / 2 + 16px));
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 14px);
+    height: 52px; padding: 0 20px 0 16px; border-radius: 16px; border: none;
+    background: var(--accent); color: var(--accent-fg); font-size: 15px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 6px 18px rgba(168,71,31,0.35), 0 2px 4px rgba(34,30,25,0.12);
+  }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 16px;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 14px; font-weight: 600;
+    white-space: nowrap; touch-action: manipulation;
+  }
+  .btn:active { background: var(--surface-2); }
+  .btn-sm { height: 38px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .btn-primary:active { background: color-mix(in srgb, var(--accent) 85%, black); }
+  .btn-danger { color: var(--status-cancelled); border-color: color-mix(in srgb, var(--status-cancelled) 45%, var(--border)); }
+  .btn-dashed { border-style: dashed; background: transparent; color: var(--fg-muted); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 10px; border: 1px solid transparent; background: transparent; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .icon-btn:active { background: var(--surface-2); }
+
+  .search { position: relative; }
+  .search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--fg-muted); }
+  .input { width: 100%; height: 46px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); padding: 0 12px; font-size: 16px; }
+  .search .input { padding-left: 40px; }
+  textarea.input { height: auto; min-height: 96px; padding: 12px; resize: vertical; line-height: 1.45; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+  .field-label .opt { font-weight: 400; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px; }
+  .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .list-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
+  .list-meta-actions { display: flex; gap: 6px; min-width: 0; }
+  .meta-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; font-weight: 600; white-space: nowrap; min-width: 0;
+  }
+  .meta-btn span { overflow: hidden; text-overflow: ellipsis; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .pill-dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
+  .empty { border: 1px dashed var(--border); border-radius: 12px; padding: 36px 16px; text-align: center; color: var(--fg-muted); font-size: 13.5px; }
+
+  .backdrop { position: fixed; inset: 0; background: rgba(20,16,12,0.42); z-index: 50; animation: fade 0.15s ease; }
+  .sheet { position: fixed; z-index: 51; background: var(--surface); display: flex; flex-direction: column; box-shadow: 0 -8px 30px rgba(20,16,12,0.18); }
+  .sheet.full { inset: 0; animation: slideUp 0.2s ease; }
+  .sheet.bottom { left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 18px 18px 0 0; animation: slideUp 0.2s ease; }
+  .sheet.top-layer { z-index: 61; }
+  .backdrop.top-layer { z-index: 60; }
+  .sheet-grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--border); margin: 8px auto 0; flex-shrink: 0; }
+  .sheet-header { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; min-height: 56px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .sheet.full .sheet-header { padding-top: calc(6px + var(--safe-top)); padding-left: 6px; }
+  .sheet-title { font-size: 16px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px; display: flex; flex-direction: column; gap: 16px; -webkit-overflow-scrolling: touch; }
+  .sheet.bottom .sheet-body { padding-bottom: calc(16px + var(--safe-bottom)); }
+  .sheet-footer { flex-shrink: 0; display: flex; gap: 10px; padding: 12px 16px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
+  .sheet-footer .btn { flex: 1; }
+  @media (min-width: 768px) {
+    .sheet.full { left: auto; width: 440px; border-left: 1px solid var(--border); animation: slideLeft 0.2s ease; }
+    .sheet.full .sheet-header { padding-top: 6px; }
+    .sheet.bottom { left: 50%; right: auto; bottom: 24px; width: 420px; transform: translateX(-50%); border-radius: 18px; animation: fade 0.15s ease; }
+    .sheet.bottom .sheet-grabber { display: none; }
+  }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { transform: translateY(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+  @keyframes slideLeft { from { transform: translateX(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+  .menu-row {
+    display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 6px; border-radius: 10px; width: 100%;
+    color: var(--fg); text-decoration: none; font-size: 15px; font-weight: 600; background: none; border: none; text-align: left;
+  }
+  .menu-row:active { background: var(--surface-2); }
+  .menu-row .trail { margin-left: auto; color: var(--fg-muted); display: flex; }
+  .menu-row.selected { color: var(--accent); }
+  .group-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); margin: 0; }
+  .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .seg { height: 38px; border-radius: 8px; border: none; background: transparent; font-size: 13.5px; font-weight: 600; color: var(--fg-muted); }
+  .seg.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(34,30,25,0.14); }
+  .caption { font-size: 12.5px; color: var(--fg-muted); margin: 0; }
+  .form-error { font-size: 13px; color: var(--status-cancelled); font-weight: 600; margin: 0; }
+  .switch { position: relative; width: 50px; height: 30px; border-radius: 999px; border: none; background: var(--border); flex-shrink: 0; padding: 0; }
+  .switch.on { background: var(--accent); }
+  .switch span { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: left 0.15s ease; }
+  .switch.on span { left: 23px; }
+  .toggle-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 80;
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 80px);
+    background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+    box-shadow: 0 8px 20px rgba(34,30,25,0.22); max-width: calc(100vw - 32px); animation: fade 0.15s ease;
+  }
+  .toast.over-footer { bottom: calc(var(--safe-bottom) + 84px); }
+  /* ================= end shared shell ================= */
+
+  /* ---- Menu page ---- */
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .pcard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .pcard.inactive { opacity: 0.72; }
+  .pcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .pcard-name { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.3; min-width: 0; }
+  .pcard-price { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .pcard-price .price { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .pcard-desc { margin: 0; font-size: 13px; color: var(--fg-muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .pcard-actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: auto; }
+  .pcard-actions .btn { flex: 1; }
+  .money-input { position: relative; }
+  .money-input .prefix { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--fg-muted); font-weight: 600; pointer-events: none; }
+  .money-input .input { padding-left: 28px; }
+
+  /* ================= PIN confirmation (same block in menu- and bookings-prototype.html) ================= */
+  .backdrop.pin-layer { z-index: 90; }
+  .sheet.pin-layer { z-index: 91; }
+  .pin-body { padding: 8px 20px calc(20px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .pin-head { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pin-icon { width: 40px; height: 40px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+  .pin-head h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .pin-detail { margin: 0; font-size: 13.5px; color: var(--fg-muted); max-width: 300px; }
+  .pin-dots { display: flex; justify-content: center; align-items: center; gap: 14px; height: 22px; }
+  .pin-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--fg); }
+  .pin-hint { color: var(--fg-muted); font-size: 13px; }
+  .pin-shake { animation: pinShake 0.35s; }
+  @keyframes pinShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+  .pin-msg { min-height: 18px; text-align: center; font-size: 13px; font-weight: 600; color: var(--status-cancelled); }
+  .pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 300px; margin: 0 auto; }
+  .pin-key {
+    height: 56px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+    font-family: var(--font-mono); font-size: 22px; font-weight: 600; display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+  }
+  .pin-key:active { background: var(--surface-2); }
+  .pin-key.fn { font-family: var(--font-body); background: transparent; border-color: transparent; color: var(--fg-muted); }
+  .pin-key.ok { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-family: var(--font-body); font-size: 15px; font-weight: 700; }
+  .pin-key[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .pin-cancel { width: 100%; max-width: 300px; margin: 0 auto; }
+  /* ================= end PIN confirmation ================= */
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================================
+   Roastline — Menu page, standalone mobile prototype
+   -------------------------------------------------------------------------------------
+   Same behavior as the web menu-prototype.html / menu-page-spec.md (search, status
+   chips with global counts, sort, add/edit, activate/deactivate, no delete), laid out
+   for a phone. Adding, editing and activating/deactivating a product ask for the PIN first.
+   Layout: top bar, bottom navigation (Bookings · Menu · Settings), floating "Add product" button, full-screen
+   add/edit sheet, bottom sheet for sort.
+
+   Rendering: full re-render on clicks; typing never re-renders the input being typed
+   in (only the results region is redrawn), so the on-screen keyboard stays open.
+   ===================================================================================== */
+
+  const INITIAL_PRODUCTS = [
+    { id: 'p1', name: 'Lechon Head',    price: 1200, cookingTimeMin: 180, active: true,  description: 'Whole roasted pig head — a budget-friendly centerpiece for smaller gatherings.' },
+    { id: 'p2', name: 'Lechon Turkey',  price: 4500, cookingTimeMin: 150, active: true,  description: 'Turkey roasted lechon-style, stuffed with the same herb blend as the whole pig.' },
+    { id: 'p3', name: 'Lechon Chicken', price: 750,  cookingTimeMin: 30,  active: true,  description: 'Our fastest order — a whole chicken roasted to order, great for walk-ins.' },
+    { id: 'p4', name: 'Lechon Belly',   price: 2200, cookingTimeMin: 120, active: true,  description: 'Boneless rolled pork belly with crisp skin — the most ordered cut.' },
+    { id: 'p5', name: 'Liempo',         price: 650,  cookingTimeMin: 45,  active: true,  description: 'Grilled pork belly strips, marinated overnight.' }
+  ];
+
+  const SORT_FIELDS = [
+    { key: 'name',        label: 'Name',         ascLabel: 'A → Z',          descLabel: 'Z → A' },
+    { key: 'price',       label: 'Price',        ascLabel: 'Low to high',    descLabel: 'High to low' },
+    { key: 'cookingTime', label: 'Cooking time', ascLabel: 'Shortest first', descLabel: 'Longest first' }
+  ];
+  const SORT_FIELD_BY_KEY = {};
+  SORT_FIELDS.forEach((f) => { SORT_FIELD_BY_KEY[f.key] = f; });
+  const STATUS_CHIP_ORDER = ['all', 'active', 'inactive'];
+  const TODAY_LABEL = 'Friday, Oct 9, 2026';
+
+  // ---------------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------------
+  function formatDuration(min) {
+    min = Number(min) || 0;
+    if (min < 60) return min + ' min';
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return h + ' hr' + (m ? ' ' + m + ' min' : '');
+  }
+  function formatMoney(n) { return '₱' + Math.round(Number(n) || 0).toLocaleString('en-PH'); }
+  function esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function icon(paths, size) {
+    size = size || 16;
+    return '<svg viewBox="0 0 20 20" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+  }
+  const ICONS = {
+    flame: '<path d="M10 2.5c2 3 4.5 5 4.5 8.5a4.5 4.5 0 01-9 0c0-1.3.5-2.2 1.2-3.1.2 1 .9 1.6 1.6 1.6.9 0 1.3-.8 1.1-1.6-.3-1.3-.6-2.6.6-5.4z"></path>',
+    list: '<line x1="4" y1="6" x2="16" y2="6"></line><line x1="4" y1="10" x2="16" y2="10"></line><line x1="4" y1="14" x2="12" y2="14"></line>',
+    lock: '<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>',
+    gear: '<circle cx="10" cy="10" r="3"></circle><line x1="10" y1="2.5" x2="10" y2="4.5"></line><line x1="10" y1="15.5" x2="10" y2="17.5"></line><line x1="2.5" y1="10" x2="4.5" y2="10"></line><line x1="15.5" y1="10" x2="17.5" y2="10"></line><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"></line><line x1="13.7" y1="13.7" x2="15.1" y2="15.1"></line><line x1="4.9" y1="15.1" x2="6.3" y2="13.7"></line><line x1="13.7" y1="6.3" x2="15.1" y2="4.9"></line>',
+    plus: '<line x1="10" y1="4" x2="10" y2="16"></line><line x1="4" y1="10" x2="16" y2="10"></line>',
+    close: '<line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line>',
+    search: '<circle cx="8.5" cy="8.5" r="5"></circle><line x1="12.5" y1="12.5" x2="17" y2="17"></line>',
+    check: '<polyline points="4,10.5 8,14.5 16,5.5"></polyline>',
+    chevron: '<polyline points="8,4 13,10 8,16"></polyline>',
+    chevDown: '<polyline points="5,8 10,13 15,8"></polyline>',
+    sortAsc: '<line x1="10" y1="16" x2="10" y2="4"></line><polyline points="5,9 10,4 15,9"></polyline>',
+    sortDesc: '<line x1="10" y1="4" x2="10" y2="16"></line><polyline points="5,11 10,16 15,11"></polyline>'
+  };
+  function slugId() { return 'p-new-' + Date.now() + '-' + Math.round(Math.random() * 999); }
+  function defaultForm() { return { name: '', price: '', cookingTimeMin: '', description: '', active: true }; }
+
+  // ---------------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------------
+  const state = {
+    products: INITIAL_PRODUCTS.slice(),
+    search: '',
+    statusFilter: 'all',
+    sortField: 'name',
+    sortDir: 'asc',
+    sheet: null,        // 'sort' | null — bottom sheet
+    drawer: null,       // { type: 'add' } | { type: 'edit', id } | null — full-screen sheet
+    form: defaultForm(),
+    formError: '',
+    toast: '',
+    pinPrompt: null     // PIN confirmation sheet for critical actions (see requestPin)
+  };
+
+  let toastTimer = null;
+  function showToast(msg) {
+    state.toast = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { state.toast = ''; render(); }, 2400);
+  }
+
+
+  // =================================================================================
+  // PIN confirmation for critical actions (same block in menu- and bookings-prototype.html)
+  // ---------------------------------------------------------------------------------
+  // Asked before: adding a product, saving product edits, activating/deactivating a
+  // product (Menu — asked every time), and recording a payment or using "Discount remaining
+  // balance" or cancelling (Bookings — a correct PIN is remembered for 3 minutes, via opts.rememberMs).
+  // The action only runs after the correct PIN. 5 wrong tries → 30-second wait, same rule
+  // as the lock screen. The remembered window is in memory only, so it ends when the app
+  // locks or closes.
+  //
+  // Prototype only: the PIN is read from browser storage, written by signin-prototype.html
+  // when a PIN is set or changed (falls back to 1234). In the real app this is
+  // AppLockService.ConfirmAsync(pin) checking the hashed PIN in SQLite, and the service
+  // method itself refuses to run without that fresh confirmation.
+  // =================================================================================
+  const PIN_KEY = 'roastline.pin';
+  const PIN_MIN = 4, PIN_MAX = 6, PIN_MAX_ATTEMPTS = 5, PIN_LOCK_SECONDS = 30;
+  const pinGuard = { failed: 0, lockedUntil: 0, timer: null, rememberedUntil: 0 };
+  function currentPin() { try { return localStorage.getItem(PIN_KEY) || '1234'; } catch (e) { return '1234'; } }
+  function pinLocked() { return Date.now() < pinGuard.lockedUntil; }
+  function pinSecondsLeft() { return Math.max(0, Math.ceil((pinGuard.lockedUntil - Date.now()) / 1000)); }
+
+  // opts: { detail, confirmLabel, rememberMs }. onConfirm runs only after the correct PIN and
+  // must render(). With rememberMs, a correct PIN skips the prompt for that long afterwards
+  // (fixed window from when the PIN was entered — it isn't extended by later actions).
+  function requestPin(opts, onConfirm) {
+    if (opts.rememberMs && Date.now() < pinGuard.rememberedUntil) { onConfirm(); return; }
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // closes the on-screen keyboard
+    state.pinPrompt = { detail: opts.detail || '', confirmLabel: opts.confirmLabel || 'Confirm', rememberMs: opts.rememberMs || 0, entry: '', message: '', shake: false, onConfirm };
+    render();
+  }
+  function startPinTimer() {
+    if (pinGuard.timer) clearInterval(pinGuard.timer);
+    pinGuard.timer = setInterval(() => {
+      if (!pinLocked()) { clearInterval(pinGuard.timer); pinGuard.timer = null; }
+      if (state.pinPrompt) render();
+    }, 1000);
+  }
+  const PinActions = {
+    key(d) {
+      const p = state.pinPrompt;
+      if (!p || pinLocked() || p.entry.length >= PIN_MAX) return;
+      p.entry += d; p.message = ''; render();
+    },
+    back() { const p = state.pinPrompt; if (!p || pinLocked()) return; p.entry = p.entry.slice(0, -1); render(); },
+    cancel() { state.pinPrompt = null; render(); },
+    submit() {
+      const p = state.pinPrompt;
+      if (!p || pinLocked() || p.entry.length < PIN_MIN) return;
+      if (p.entry === currentPin()) {
+        pinGuard.failed = 0;
+        if (p.rememberMs) pinGuard.rememberedUntil = Date.now() + p.rememberMs;
+        const run = p.onConfirm;
+        state.pinPrompt = null;
+        run();
+        return;
+      }
+      pinGuard.failed += 1;
+      p.entry = ''; p.shake = true;
+      if (pinGuard.failed >= PIN_MAX_ATTEMPTS) {
+        pinGuard.failed = 0;
+        pinGuard.lockedUntil = Date.now() + PIN_LOCK_SECONDS * 1000;
+        p.message = '';
+        startPinTimer();
+      } else {
+        const left = PIN_MAX_ATTEMPTS - pinGuard.failed;
+        p.message = 'Incorrect PIN. ' + left + (left === 1 ? ' try' : ' tries') + ' left.';
+      }
+      render();
+    }
+  };
+  function pinKeydown(e) {
+    if (/^[0-9]$/.test(e.key)) { PinActions.key(e.key); e.preventDefault(); }
+    else if (e.key === 'Backspace') { PinActions.back(); e.preventDefault(); }
+    else if (e.key === 'Enter') { PinActions.submit(); e.preventDefault(); }
+    else if (e.key === 'Escape') { PinActions.cancel(); e.preventDefault(); }
+  }
+  function renderPinPrompt() {
+    const p = state.pinPrompt;
+    if (!p) return '';
+    const locked = pinLocked();
+    const dis = locked ? 'disabled' : '';
+    const dots = p.entry.length === 0
+      ? '<span class="pin-hint">Enter your PIN</span>'
+      : Array.from({ length: p.entry.length }, () => '<span class="pin-dot"></span>').join('');
+    const msg = locked ? 'Too many tries. Try again in ' + pinSecondsLeft() + 's.' : p.message;
+    const digits = ['1','2','3','4','5','6','7','8','9'].map((d) => `<button type="button" class="pin-key" data-action="pin-key" data-digit="${d}" ${dis}>${d}</button>`).join('');
+    const html = `
+      <div class="backdrop pin-layer" data-action="pin-cancel"></div>
+      <div class="sheet bottom pin-layer" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+        <div class="sheet-grabber"></div>
+        <div class="pin-body">
+          <div class="pin-head">
+            <span class="pin-icon">${icon('<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>', 20)}</span>
+            <h2 id="pin-title">Enter your PIN to continue</h2>
+            <p class="pin-detail">${esc(p.detail)}</p>
+            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs and cancellations won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
+          </div>
+          <div class="pin-dots ${p.shake ? 'pin-shake' : ''}" aria-live="polite" aria-label="${p.entry.length} digits entered">${dots}</div>
+          <div class="pin-msg" role="alert">${esc(msg)}</div>
+          <div class="pin-keypad" role="group" aria-label="PIN keypad">
+            ${digits}
+            <button type="button" class="pin-key fn" data-action="pin-back" aria-label="Delete" ${dis}>${icon('<path d="M7 5h9.5v10H7l-4.5-5z"></path><line x1="10" y1="8" x2="14" y2="12"></line><line x1="14" y1="8" x2="10" y2="12"></line>', 22)}</button>
+            <button type="button" class="pin-key" data-action="pin-key" data-digit="0" ${dis}>0</button>
+            <button type="button" class="pin-key ok" data-action="pin-ok" ${locked || p.entry.length < PIN_MIN ? 'disabled' : ''}>${esc(p.confirmLabel)}</button>
+          </div>
+          <button type="button" class="btn pin-cancel" data-action="pin-cancel">Cancel</button>
+        </div>
+      </div>`;
+    if (p.shake) setTimeout(() => { if (state.pinPrompt) state.pinPrompt.shake = false; }, 400);
+    return html;
+  }
+  // ================= end PIN confirmation =================
+
+  // ---------------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------------
+  const Actions = {
+    setStatusFilter(key) { state.statusFilter = key; render(); },
+    openSheet(name) { state.sheet = name; render(); },
+    closeSheet() { state.sheet = null; render(); },
+    setSortField(field) { state.sortField = field; render(); },
+    setSortDir(dir) { state.sortDir = dir; render(); },
+
+    openAddForm() { state.drawer = { type: 'add' }; state.form = defaultForm(); state.formError = ''; render(); },
+    openEditForm(id) {
+      const p = state.products.find((x) => x.id === id);
+      if (!p) return;
+      state.drawer = { type: 'edit', id };
+      state.form = { name: p.name, price: String(p.price), cookingTimeMin: String(p.cookingTimeMin), description: p.description || '', active: p.active };
+      state.formError = '';
+      render();
+    },
+    closeDrawer() { state.drawer = null; state.formError = ''; render(); },
+    toggleFormActive() { state.form = Object.assign({}, state.form, { active: !state.form.active }); render(); },
+
+    submitForm() {
+      const f = state.form;
+      const name = (f.name || '').trim();
+      const price = f.price === '' ? NaN : Number(f.price);
+      const cookingTimeMin = f.cookingTimeMin === '' ? NaN : Number(f.cookingTimeMin);
+      if (!name) { state.formError = 'Give the product a name.'; render(); return; }
+      if (!(price >= 0)) { state.formError = 'Price must be a number of 0 or more.'; render(); return; }
+      if (!(cookingTimeMin >= 1)) { state.formError = 'Cooking time must be at least 1 minute.'; render(); return; }
+
+      const isEdit = state.drawer && state.drawer.type === 'edit';
+      const editId = isEdit ? state.drawer.id : null;
+      const values = { name, price, cookingTimeMin, description: (f.description || '').trim(), active: f.active };
+      state.formError = '';
+      // Critical action: only saved after the PIN is entered.
+      requestPin({
+        detail: isEdit ? 'Save changes to ' + name + '.' : 'Add ' + name + ' to the menu.',
+        confirmLabel: isEdit ? 'Save' : 'Add'
+      }, () => {
+        if (editId) {
+          state.products = state.products.map((p) => (p.id === editId ? Object.assign({}, p, values) : p));
+        } else {
+          state.products = state.products.concat([Object.assign({ id: slugId() }, values)]);
+        }
+        state.drawer = null;
+        state.form = defaultForm();
+        showToast(editId ? 'Saved ' + name : 'Added ' + name);
+        render();
+      });
+    },
+
+    quickToggleActive(id) {
+      const product = state.products.find((p) => p.id === id);
+      if (!product) return;
+      const activate = !product.active;
+      // Editing availability is a menu edit too, so it also needs the PIN.
+      requestPin({
+        detail: (activate ? 'Make ' + product.name + ' available for booking again.' : 'Hide ' + product.name + ' from new bookings.'),
+        confirmLabel: activate ? 'Activate' : 'Deactivate'
+      }, () => {
+        state.products = state.products.map((p) => (p.id === id ? Object.assign({}, p, { active: activate }) : p));
+        showToast(product.name + (activate ? ' is available again' : ' hidden from new bookings'));
+        render();
+      });
+    }
+  };
+
+  // ---------------------------------------------------------------------------------
+  // View model
+  // ---------------------------------------------------------------------------------
+  function computeViewModel() {
+    const products = state.products;
+    const counts = {
+      all: products.length,
+      active: products.filter((p) => p.active).length,
+      inactive: products.filter((p) => !p.active).length
+    };
+    const chips = STATUS_CHIP_ORDER.map((key) => {
+      const label = key === 'all' ? 'All' : (key === 'active' ? 'Active' : 'Inactive');
+      return { key, label: label + ' · ' + counts[key], active: state.statusFilter === key };
+    });
+
+    const q = state.search.trim().toLowerCase();
+    let visible = products.filter((p) => {
+      if (state.statusFilter === 'active' && !p.active) return false;
+      if (state.statusFilter === 'inactive' && p.active) return false;
+      if (!q) return true;
+      return p.name.toLowerCase().indexOf(q) !== -1 || (p.description || '').toLowerCase().indexOf(q) !== -1;
+    });
+    const compare = (a, b) => {
+      switch (state.sortField) {
+        case 'price': return a.price - b.price;
+        case 'cookingTime': return a.cookingTimeMin - b.cookingTimeMin;
+        default: return a.name.localeCompare(b.name);
+      }
+    };
+    visible = visible.slice().sort((a, b) => (state.sortDir === 'desc' ? -compare(a, b) : compare(a, b)));
+
+    const cards = visible.map((p) => ({
+      id: p.id, name: p.name,
+      priceLabel: formatMoney(p.price),
+      cookingTimeLabel: formatDuration(p.cookingTimeMin),
+      description: p.description || 'No description yet.',
+      active: p.active,
+      statusLabel: p.active ? 'Active' : 'Inactive',
+      statusColor: p.active ? 'var(--status-cooked)' : 'var(--status-pending)',
+      toggleLabel: p.active ? 'Deactivate' : 'Activate'
+    }));
+
+    const noProductsAtAll = products.length === 0;
+    const emptyMessage = noProductsAtAll
+      ? 'No products in the menu yet. Add your first one to get started.'
+      : (q ? 'No products match “' + state.search.trim() + '”.' : 'No products match this filter.');
+
+    const sortMeta = SORT_FIELD_BY_KEY[state.sortField] || SORT_FIELDS[0];
+    const isEdit = !!state.drawer && state.drawer.type === 'edit';
+
+    return {
+      chips, cards, emptyMessage,
+      countLabel: cards.length + (cards.length === 1 ? ' product' : ' products'),
+      sortLabel: sortMeta.label + ' · ' + (state.sortDir === 'asc' ? sortMeta.ascLabel : sortMeta.descLabel),
+      sortMeta,
+      drawerOpen: !!state.drawer, isEdit,
+      drawerTitle: isEdit ? 'Edit product' : 'Add product',
+      submitLabel: isEdit ? 'Save changes' : 'Add product'
+    };
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Templates
+  // ---------------------------------------------------------------------------------
+  function renderTopbar() {
+    return `
+      <header class="topbar"><div class="topbar-inner">
+        <div class="brand-mark"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${ICONS.flame}</svg></div>
+        <div class="topbar-titles"><h1>Menu</h1><span class="sub">Products, pricing, and availability</span></div>
+      </div></header>`;
+  }
+
+  function renderBottomNav() {
+    return `
+      <nav class="bottomnav" aria-label="Main"><div class="bottomnav-inner">
+        <a class="navitem" href="bookings-prototype.html">${icon(ICONS.list, 22)}<span>Bookings</span></a>
+        <a class="navitem active" href="menu-prototype.html" aria-current="page">${icon(ICONS.flame, 22)}<span>Menu</span></a>
+        <a class="navitem" href="settings-prototype.html">${icon(ICONS.gear, 22)}<span>Settings</span></a>
+      </div></nav>`;
+  }
+
+  function renderGrid(vm) {
+    if (vm.cards.length === 0) return `<div class="empty">${esc(vm.emptyMessage)}</div>`;
+    return `<div class="pgrid">${vm.cards.map((c) => `
+      <article class="pcard ${c.active ? '' : 'inactive'}">
+        <div class="pcard-top">
+          <h2 class="pcard-name">${esc(c.name)}</h2>
+          <span class="pill" style="background:color-mix(in srgb, ${c.statusColor} 16%, var(--surface)); color:${c.statusColor};"><span class="pill-dot" style="background:${c.statusColor};"></span>${c.statusLabel}</span>
+        </div>
+        <div class="pcard-price"><span class="mono price">${c.priceLabel}</span><span class="muted">· ${c.cookingTimeLabel} cook</span></div>
+        <p class="pcard-desc">${esc(c.description)}</p>
+        <div class="pcard-actions">
+          <button type="button" class="btn btn-sm" data-action="open-edit-form" data-id="${c.id}">Edit</button>
+          <button type="button" class="btn btn-sm" data-action="quick-toggle-active" data-id="${c.id}">${c.toggleLabel}</button>
+        </div>
+      </article>`).join('')}</div>`;
+  }
+
+  function renderMain(vm) {
+    return `
+      <main class="content">
+        <label class="search">
+          <span class="sr-only">Search products</span>
+          ${icon(ICONS.search, 16)}
+          <input class="input" type="search" enterkeyhint="search" data-input="search" value="${esc(state.search)}" placeholder="Search products" autocomplete="off" />
+        </label>
+        <div class="chip-row no-scrollbar" data-scroll-key="chips">
+          ${vm.chips.map((c) => `<button type="button" class="chip ${c.active ? 'active' : ''}" data-action="set-status-filter" data-key="${c.key}" aria-pressed="${c.active}">${c.label}</button>`).join('')}
+        </div>
+        <div class="list-meta">
+          <span class="muted" data-region="count">${vm.countLabel}</span>
+          <div class="list-meta-actions">
+            <button type="button" class="meta-btn" data-action="open-sheet" data-sheet="sort">${icon(state.sortDir === 'asc' ? ICONS.sortAsc : ICONS.sortDesc, 14)}<span>${esc(vm.sortLabel)}</span></button>
+          </div>
+        </div>
+        <div data-region="grid">${renderGrid(vm)}</div>
+      </main>`;
+  }
+
+  function renderSortSheet(vm) {
+    return `
+      <div class="backdrop" data-action="close-sheet"></div>
+      <div class="sheet bottom" role="dialog" aria-modal="true" aria-label="Sort products">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-header"><span class="sheet-title">Sort products</span><button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon(ICONS.close, 18)}</button></div>
+        <div class="sheet-body">
+          <div>
+            ${SORT_FIELDS.map((f) => `<button type="button" class="menu-row ${f.key === state.sortField ? 'selected' : ''}" data-action="set-sort-field" data-field="${f.key}">${f.label}<span class="trail">${f.key === state.sortField ? icon(ICONS.check, 18) : ''}</span></button>`).join('')}
+          </div>
+          <div class="segmented" role="group" aria-label="Direction">
+            <button type="button" class="seg ${state.sortDir === 'asc' ? 'active' : ''}" data-action="set-sort-dir" data-dir="asc">${vm.sortMeta.ascLabel}</button>
+            <button type="button" class="seg ${state.sortDir === 'desc' ? 'active' : ''}" data-action="set-sort-dir" data-dir="desc">${vm.sortMeta.descLabel}</button>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="close-sheet">Done</button>
+        </div>
+      </div>`;
+  }
+
+  function renderDrawer(vm) {
+    if (!vm.drawerOpen) return '';
+    const f = state.form;
+    return `
+      <div class="backdrop" data-action="close-drawer"></div>
+      <div class="sheet full" role="dialog" aria-modal="true" aria-label="${esc(vm.drawerTitle)}">
+        <div class="sheet-header">
+          <button type="button" class="icon-btn" data-action="close-drawer" aria-label="Close">${icon(ICONS.close, 20)}</button>
+          <span class="sheet-title">${esc(vm.drawerTitle)}</span>
+        </div>
+        <form class="sheet-body" id="product-form" data-form="product" data-scroll-key="drawer" novalidate>
+          <label class="field">
+            <span class="field-label">Product name</span>
+            <input class="input" type="text" data-input="form.name" value="${esc(f.name)}" placeholder="e.g. Lechon Belly" autocomplete="off" enterkeyhint="next" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Price</span>
+              <span class="money-input"><span class="prefix">₱</span><input class="input" type="number" inputmode="decimal" min="0" step="1" data-input="form.price" value="${esc(f.price)}" placeholder="0" /></span>
+            </label>
+            <label class="field">
+              <span class="field-label">Cooking time (min)</span>
+              <input class="input" type="number" inputmode="numeric" min="1" step="1" data-input="form.cookingTimeMin" value="${esc(f.cookingTimeMin)}" placeholder="30" />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">Description <span class="opt">(optional)</span></span>
+            <textarea class="input" rows="3" data-input="form.description" placeholder="What makes this product worth ordering">${esc(f.description)}</textarea>
+          </label>
+          <div class="toggle-card">
+            <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+              <span style="font-size:14px; font-weight:600;">Available for booking</span>
+              <span class="caption">Inactive products are hidden from the new-booking form.</span>
+            </div>
+            <button type="button" class="switch ${f.active ? 'on' : ''}" role="switch" aria-checked="${f.active}" aria-label="Available for booking" data-action="toggle-form-active"><span></span></button>
+          </div>
+          ${state.formError ? `<p class="form-error" role="alert">${esc(state.formError)}</p>` : ''}
+        </form>
+        <div class="sheet-footer">
+          <button type="button" class="btn" data-action="close-drawer">Cancel</button>
+          <button type="submit" form="product-form" class="btn btn-primary">${esc(vm.submitLabel)}</button>
+        </div>
+      </div>`;
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------------
+  const appEl = document.getElementById('app');
+
+  function renderRoot() {
+    const vm = computeViewModel();
+    let sheet = '';
+    if (state.sheet === 'sort') sheet = renderSortSheet(vm);
+    appEl.innerHTML = `
+      <div class="app">
+        ${renderTopbar()}
+        ${renderMain(vm)}
+      </div>
+      ${state.drawer ? '' : `<button type="button" class="fab" data-action="open-add-form">${icon(ICONS.plus, 18)} Add product</button>`}
+      ${renderBottomNav()}
+      ${renderDrawer(vm)}
+      ${sheet}
+      ${renderPinPrompt()}
+      ${state.toast && !state.sheet && !state.pinPrompt ? `<div class="toast ${state.drawer ? 'over-footer' : ''}" role="status">${esc(state.toast)}</div>` : ''}`;
+    document.body.classList.toggle('no-scroll', !!(state.drawer || state.sheet || state.pinPrompt));
+  }
+
+  // Keep horizontal/vertical scroll positions of inner scrollers across full re-renders.
+  function render() {
+    const saved = {};
+    appEl.querySelectorAll('[data-scroll-key]').forEach((el) => { saved[el.dataset.scrollKey] = [el.scrollLeft, el.scrollTop]; });
+    const y = window.scrollY;
+    renderRoot();
+    appEl.querySelectorAll('[data-scroll-key]').forEach((el) => {
+      const s = saved[el.dataset.scrollKey];
+      if (s) { el.scrollLeft = s[0]; el.scrollTop = s[1]; }
+    });
+    if (!state.drawer) window.scrollTo(0, y);
+  }
+
+  // Redraw only the regions that depend on typed input (the input itself is untouched).
+  function renderRegions() {
+    const vm = computeViewModel();
+    const grid = appEl.querySelector('[data-region="grid"]');
+    if (grid) grid.innerHTML = renderGrid(vm);
+    const count = appEl.querySelector('[data-region="count"]');
+    if (count) count.textContent = vm.countLabel;
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Events
+  // ---------------------------------------------------------------------------------
+  appEl.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || el.disabled) return;
+    switch (el.dataset.action) {
+      case 'set-status-filter': Actions.setStatusFilter(el.dataset.key); break;
+      case 'open-sheet': Actions.openSheet(el.dataset.sheet); break;
+      case 'close-sheet': Actions.closeSheet(); break;
+      case 'set-sort-field': Actions.setSortField(el.dataset.field); break;
+      case 'set-sort-dir': Actions.setSortDir(el.dataset.dir); break;
+      case 'open-add-form': Actions.openAddForm(); break;
+      case 'open-edit-form': Actions.openEditForm(el.dataset.id); break;
+      case 'close-drawer': Actions.closeDrawer(); break;
+      case 'toggle-form-active': Actions.toggleFormActive(); break;
+      case 'quick-toggle-active': Actions.quickToggleActive(el.dataset.id); break;
+      case 'pin-key': PinActions.key(el.dataset.digit); break;
+      case 'pin-back': PinActions.back(); break;
+      case 'pin-ok': PinActions.submit(); break;
+      case 'pin-cancel': PinActions.cancel(); break;
+      default: break;
+    }
+  });
+
+  appEl.addEventListener('input', (e) => {
+    const key = e.target.dataset && e.target.dataset.input;
+    if (!key) return;
+    if (key === 'search') { state.search = e.target.value; renderRegions(); return; }
+    if (key.indexOf('form.') === 0) { state.form[key.slice(5)] = e.target.value; }
+  });
+
+  appEl.addEventListener('submit', (e) => {
+    const form = e.target.closest('[data-form="product"]');
+    if (!form) return;
+    e.preventDefault();
+    Actions.submitForm();
+  });
+
+  // Escape (and, in the real app, the Android back button) closes the top-most layer first.
+  document.addEventListener('keydown', (e) => {
+    if (state.pinPrompt) { pinKeydown(e); return; }
+    if (e.key !== 'Escape') return;
+    if (state.sheet) Actions.closeSheet();
+    else if (state.drawer) Actions.closeDrawer();
+  });
+
+  render();
+</script>
+</body>
+</html>

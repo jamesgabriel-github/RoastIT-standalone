@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Roastline — Settings</title>
+<script>
+  // Apply the saved theme before first paint (Settings → Appearance): 'light' (default),
+  // 'dark', or 'system' (match the device's light/dark setting, and follow it live).
+  // In the real app this comes from MAUI Preferences. Storage can be unavailable — light.
+  (function () {
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function apply() {
+      var t = 'light';
+      try { t = localStorage.getItem('roastline.theme') || 'light'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'system' && !!mq && mq.matches);
+      if (dark) document.documentElement.dataset.theme = 'dark';
+      else delete document.documentElement.dataset.theme;
+    }
+    apply();
+    try { if (mq) mq.addEventListener('change', apply); } catch (e) {}
+    window.__applyTheme = apply;
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* ================= Shared mobile shell (same block in bookings-prototype.html and menu-prototype.html) ================= */
+  :root {
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Consolas, monospace;
+    --bg: #EEEDE6;
+    --surface: #FFFFFF;
+    --surface-2: #F6F4EF;
+    --border: #E1DDD1;
+    --fg: #221E19;
+    --fg-muted: #847C6D;
+    --accent: #A8471F;
+    --accent-fg: #FFFFFF;
+    --status-pending: #8A8275;
+    --status-cooking: #D9731E;
+    --status-cooked: #2E8B52;
+    --status-completed: #6B7280;
+    --status-cancelled: #C1392B;
+    --nav-h: 60px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15120E;
+    --surface: #1F1B16;
+    --surface-2: #29241E;
+    --border: #3A3229;
+    --fg: #F2EDE4;
+    --fg-muted: #A79E8F;
+    --accent: #C9612F;
+    --accent-fg: #FFFFFF;
+    --status-pending: #A39A8A;
+    --status-cooking: #E8893A;
+    --status-cooked: #4CAF72;
+    --status-completed: #959CA8;
+    --status-cancelled: #E25B4D;
+  }
+  :root[data-theme="dark"] .backdrop, :root[data-theme="dark"] .dialog-backdrop { background: rgba(0,0,0,0.6); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: var(--font-body); font-size: 14px; line-height: 1.45; color: var(--fg);
+    -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
+  }
+  body.no-scroll { overflow: hidden; }
+  button, input, select, textarea { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::placeholder { color: var(--fg-muted); opacity: 1; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--fg-muted); }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  .app { min-height: 100vh; padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 84px); }
+  .topbar {
+    position: sticky; top: 0; z-index: 20; padding-top: var(--safe-top);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 56px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .topbar-titles { display: flex; flex-direction: column; min-width: 0; }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  .topbar .sub { font-size: 12px; color: var(--fg-muted); }
+  .content { max-width: 760px; margin: 0 auto; padding: 14px 16px 0; display: flex; flex-direction: column; gap: 12px; }
+
+  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom); }
+  .bottomnav-inner { max-width: 760px; margin: 0 auto; display: flex; }
+  .navitem {
+    flex: 1; min-height: var(--nav-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 11.5px; font-weight: 600; color: var(--fg-muted); text-decoration: none; background: none; border: none; padding: 6px 4px;
+  }
+  .navitem.active { color: var(--accent); }
+  .fab {
+    position: fixed; z-index: 25;
+    right: max(16px, calc((100vw - 760px) / 2 + 16px));
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 14px);
+    height: 52px; padding: 0 20px 0 16px; border-radius: 16px; border: none;
+    background: var(--accent); color: var(--accent-fg); font-size: 15px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 6px 18px rgba(168,71,31,0.35), 0 2px 4px rgba(34,30,25,0.12);
+  }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 16px;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 14px; font-weight: 600;
+    white-space: nowrap; touch-action: manipulation;
+  }
+  .btn:active { background: var(--surface-2); }
+  .btn-sm { height: 38px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .btn-primary:active { background: color-mix(in srgb, var(--accent) 85%, black); }
+  .btn-danger { color: var(--status-cancelled); border-color: color-mix(in srgb, var(--status-cancelled) 45%, var(--border)); }
+  .btn-dashed { border-style: dashed; background: transparent; color: var(--fg-muted); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 10px; border: 1px solid transparent; background: transparent; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .icon-btn:active { background: var(--surface-2); }
+
+  .search { position: relative; }
+  .search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--fg-muted); }
+  .input { width: 100%; height: 46px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); padding: 0 12px; font-size: 16px; }
+  .search .input { padding-left: 40px; }
+  textarea.input { height: auto; min-height: 96px; padding: 12px; resize: vertical; line-height: 1.45; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+  .field-label .opt { font-weight: 400; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px; }
+  .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .list-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
+  .list-meta-actions { display: flex; gap: 6px; min-width: 0; }
+  .meta-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; font-weight: 600; white-space: nowrap; min-width: 0;
+  }
+  .meta-btn span { overflow: hidden; text-overflow: ellipsis; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .pill-dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
+  .empty { border: 1px dashed var(--border); border-radius: 12px; padding: 36px 16px; text-align: center; color: var(--fg-muted); font-size: 13.5px; }
+
+  .backdrop { position: fixed; inset: 0; background: rgba(20,16,12,0.42); z-index: 50; animation: fade 0.15s ease; }
+  .sheet { position: fixed; z-index: 51; background: var(--surface); display: flex; flex-direction: column; box-shadow: 0 -8px 30px rgba(20,16,12,0.18); }
+  .sheet.full { inset: 0; animation: slideUp 0.2s ease; }
+  .sheet.bottom { left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 18px 18px 0 0; animation: slideUp 0.2s ease; }
+  .sheet.top-layer { z-index: 61; }
+  .backdrop.top-layer { z-index: 60; }
+  .sheet-grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--border); margin: 8px auto 0; flex-shrink: 0; }
+  .sheet-header { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; min-height: 56px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .sheet.full .sheet-header { padding-top: calc(6px + var(--safe-top)); padding-left: 6px; }
+  .sheet-title { font-size: 16px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px; display: flex; flex-direction: column; gap: 16px; -webkit-overflow-scrolling: touch; }
+  .sheet.bottom .sheet-body { padding-bottom: calc(16px + var(--safe-bottom)); }
+  .sheet-footer { flex-shrink: 0; display: flex; gap: 10px; padding: 12px 16px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
+  .sheet-footer .btn { flex: 1; }
+  @media (min-width: 768px) {
+    .sheet.full { left: auto; width: 440px; border-left: 1px solid var(--border); animation: slideLeft 0.2s ease; }
+    .sheet.full .sheet-header { padding-top: 6px; }
+    .sheet.bottom { left: 50%; right: auto; bottom: 24px; width: 420px; transform: translateX(-50%); border-radius: 18px; animation: fade 0.15s ease; }
+    .sheet.bottom .sheet-grabber { display: none; }
+  }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { transform: translateY(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+  @keyframes slideLeft { from { transform: translateX(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+  .menu-row {
+    display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 6px; border-radius: 10px; width: 100%;
+    color: var(--fg); text-decoration: none; font-size: 15px; font-weight: 600; background: none; border: none; text-align: left;
+  }
+  .menu-row:active { background: var(--surface-2); }
+  .menu-row .trail { margin-left: auto; color: var(--fg-muted); display: flex; }
+  .menu-row.selected { color: var(--accent); }
+  .group-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); margin: 0; }
+  .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .seg { height: 38px; border-radius: 8px; border: none; background: transparent; font-size: 13.5px; font-weight: 600; color: var(--fg-muted); }
+  .seg.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(34,30,25,0.14); }
+  .caption { font-size: 12.5px; color: var(--fg-muted); margin: 0; }
+  .form-error { font-size: 13px; color: var(--status-cancelled); font-weight: 600; margin: 0; }
+  .switch { position: relative; width: 50px; height: 30px; border-radius: 999px; border: none; background: var(--border); flex-shrink: 0; padding: 0; }
+  .switch.on { background: var(--accent); }
+  .switch span { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: left 0.15s ease; }
+  .switch.on span { left: 23px; }
+  .toggle-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 80;
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 80px);
+    background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+    box-shadow: 0 8px 20px rgba(34,30,25,0.22); max-width: calc(100vw - 32px); animation: fade 0.15s ease;
+  }
+  .toast.over-footer { bottom: calc(var(--safe-bottom) + 84px); }
+  /* ================= end shared shell ================= */
+
+  /* ---- Settings page ---- */
+  .app.no-fab { padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 24px); }
+  .section { display: flex; flex-direction: column; gap: 8px; }
+  .section-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); margin: 6px 2px 0; }
+  .set-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0 14px; }
+  .set-row {
+    display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 0; width: 100%;
+    border: none; border-top: 1px solid var(--border); background: none; text-align: left; text-decoration: none; color: var(--fg);
+  }
+  .set-row:first-child { border-top: none; }
+  a.set-row:active { opacity: 0.7; }
+  .set-icon { width: 34px; height: 34px; border-radius: 9px; background: var(--surface-2); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .set-title { font-size: 15px; font-weight: 600; }
+  .set-sub { font-size: 12.5px; color: var(--fg-muted); }
+  .set-trail { color: var(--fg-muted); display: flex; flex-shrink: 0; }
+  .always { font-size: 12.5px; color: var(--fg-muted); }
+  .theme-seg .seg { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .set-block { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+  .set-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 2px 0; }
+  .link-btn { background: none; border: none; padding: 6px 2px; color: var(--accent); font-weight: 600; font-size: 13px; min-height: 36px; }
+  .version { text-align: center; font-size: 12px; color: var(--fg-muted); margin: 10px 0 0; }
+  button.set-row { cursor: pointer; font: inherit; }
+  button.set-row:active { opacity: 0.7; }
+  .backup-warn {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; font-size: 13px;
+    background: color-mix(in srgb, var(--status-cooking) 10%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--status-cooking) 40%, var(--border));
+  }
+  .backup-warn svg { color: var(--status-cooking); flex-shrink: 0; margin-top: 1px; }
+  .danger-note {
+    padding: 10px 12px; border-radius: 12px; font-size: 13px;
+    background: color-mix(in srgb, var(--status-cancelled) 8%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--status-cancelled) 40%, var(--border));
+  }
+  .incl { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .btn-block { width: 100%; }
+  .btn-danger-solid { background: var(--status-cancelled); border-color: var(--status-cancelled); color: #fff; }
+  .file-btn { position: relative; overflow: hidden; cursor: pointer; }
+  .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .file-card { border: 1px solid var(--border); border-radius: 12px; padding: 4px 14px; }
+  .file-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 14px; }
+  .file-row:first-child { border-top: none; }
+  .file-row .k { color: var(--fg-muted); }
+  .file-row .v { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+  .form-error { font-size: 13px; color: var(--status-cancelled); font-weight: 600; margin: 0; }
+
+  /* ================= PIN confirmation (same block in menu-, bookings- and settings-prototype.html) ================= */
+  .backdrop.pin-layer { z-index: 90; }
+  .sheet.pin-layer { z-index: 91; }
+  .pin-body { padding: 8px 20px calc(20px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .pin-head { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pin-icon { width: 40px; height: 40px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+  .pin-head h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .pin-detail { margin: 0; font-size: 13.5px; color: var(--fg-muted); max-width: 300px; }
+  .pin-dots { display: flex; justify-content: center; align-items: center; gap: 14px; height: 22px; }
+  .pin-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--fg); }
+  .pin-hint { color: var(--fg-muted); font-size: 13px; }
+  .pin-shake { animation: pinShake 0.35s; }
+  @keyframes pinShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+  .pin-msg { min-height: 18px; text-align: center; font-size: 13px; font-weight: 600; color: var(--status-cancelled); }
+  .pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 300px; margin: 0 auto; }
+  .pin-key {
+    height: 56px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+    font-family: var(--font-mono); font-size: 22px; font-weight: 600; display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+  }
+  .pin-key:active { background: var(--surface-2); }
+  .pin-key.fn { font-family: var(--font-body); background: transparent; border-color: transparent; color: var(--fg-muted); }
+  .pin-key.ok { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-family: var(--font-body); font-size: 15px; font-weight: 700; }
+  .pin-key[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .pin-cancel { width: 100%; max-width: 300px; margin: 0 auto; }
+  /* ================= end PIN confirmation ================= */
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================================
+   Roastline — Settings, standalone mobile prototype
+   -------------------------------------------------------------------------------------
+   Third tab of the bottom navigation (Bookings · Menu · Settings). Sections:
+
+   - Security → Update PIN: opens the lock screen's change flow
+     (signin-prototype.html?mode=change), which returns here when done.
+   - Data → Export data / Import data, plus the Automatic CSV backup card (the single
+     "roastline-bookings-48h.csv" written hourly by Bookings, downloadable).
+   - Export data / Import data: Both ask for the PIN every time. The backup file
+     never contains the PIN or recovery code: import keeps this device's PIN. Export saves one backup file of everything on the device; Import replaces all
+     data on the device with a backup (after saving a safety copy) and reopens Bookings.
+     If the phone already has bookings, Import warns how many will be replaced. A warning shows when there's no export in the last 7 days.
+     Prototype only: the backup is a small JSON stand-in (sample counts); the real
+     app exports/imports the SQLite database file — see implementation-plan.md.
+   - Appearance → Theme: Light / Dark / Device (match the phone's setting). Applies immediately
+     to every screen.
+   - Bookings list → Columns to show: which optional fields each booking card shows
+     on the Bookings page. Booking ID is always shown.
+
+   Settings are per device. Here they're kept in browser storage so all prototype files
+   share them; in the real app they live in MAUI Preferences.
+   ===================================================================================== */
+
+  const THEME_KEY = 'roastline.theme';
+  const LAST_EXPORT_KEY = 'roastline.lastExportAt';
+  const APP_VERSION = '1.0.0';
+  const SCHEMA_VERSION = 3;          // number of migrations in the real app
+  const BACKUP_EXT = '.roastline';
+  const BACKUP_REMINDER_DAYS = 7;
+  const SAMPLE_COUNTS = { orders: 14, items: 20, payments: 11, products: 5 }; // prototype stand-in
+  // Prototype stand-in for "how many bookings are on this phone right now" (the Bookings
+  // prototype's 20 seed bookings). Add ?empty=1 to the URL to try an empty phone. The real
+  // app counts the rows in `items`.
+  const DEVICE_BOOKING_COUNT = new URLSearchParams(location.search).get('empty') === '1' ? 0 : 20;
+  const COLUMNS_KEY = 'roastline.bookingColumns';
+  const COLUMN_FIELDS = [
+    { key: 'customer',    label: 'Customer' },
+    { key: 'product',     label: 'Product' },
+    { key: 'cookingTime', label: 'Cooking time' },
+    { key: 'pickup',      label: 'Pickup' },
+    { key: 'status',      label: 'Status' },
+    { key: 'total',       label: 'Total amount' },
+    { key: 'paid',        label: 'Amount paid' }
+  ];
+  function defaultColumns() { return { customer: true, product: true, cookingTime: true, pickup: true, status: true, total: true, paid: true }; }
+
+  function esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function icon(paths, size) {
+    size = size || 16;
+    return '<svg viewBox="0 0 20 20" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+  }
+  const ICONS = {
+    flame: '<path d="M10 2.5c2 3 4.5 5 4.5 8.5a4.5 4.5 0 01-9 0c0-1.3.5-2.2 1.2-3.1.2 1 .9 1.6 1.6 1.6.9 0 1.3-.8 1.1-1.6-.3-1.3-.6-2.6.6-5.4z"></path>',
+    list: '<line x1="4" y1="6" x2="16" y2="6"></line><line x1="4" y1="10" x2="16" y2="10"></line><line x1="4" y1="14" x2="12" y2="14"></line>',
+    gear: '<circle cx="10" cy="10" r="3"></circle><line x1="10" y1="2.5" x2="10" y2="4.5"></line><line x1="10" y1="15.5" x2="10" y2="17.5"></line><line x1="2.5" y1="10" x2="4.5" y2="10"></line><line x1="15.5" y1="10" x2="17.5" y2="10"></line><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"></line><line x1="13.7" y1="13.7" x2="15.1" y2="15.1"></line><line x1="4.9" y1="15.1" x2="6.3" y2="13.7"></line><line x1="13.7" y1="6.3" x2="15.1" y2="4.9"></line>',
+    key: '<circle cx="7" cy="12" r="3.5"></circle><path d="M9.5 9.5l7-7"></path><path d="M14 5l2 2"></path>',
+    chevron: '<polyline points="8,4 13,10 8,16"></polyline>',
+    sun: '<circle cx="10" cy="10" r="3.2"></circle><line x1="10" y1="2" x2="10" y2="3.8"></line><line x1="10" y1="16.2" x2="10" y2="18"></line><line x1="2" y1="10" x2="3.8" y2="10"></line><line x1="16.2" y1="10" x2="18" y2="10"></line><line x1="4.3" y1="4.3" x2="5.6" y2="5.6"></line><line x1="14.4" y1="14.4" x2="15.7" y2="15.7"></line><line x1="4.3" y1="15.7" x2="5.6" y2="14.4"></line><line x1="14.4" y1="5.6" x2="15.7" y2="4.3"></line>',
+    moon: '<path d="M16 12.2A6.5 6.5 0 017.8 4a6.5 6.5 0 108.2 8.2z"></path>',
+    device: '<rect x="5.5" y="2.5" width="9" height="15" rx="2"></rect><line x1="9" y1="15" x2="11" y2="15"></line>',
+    columns: '<rect x="3" y="4" width="14" height="12" rx="1.5"></rect><line x1="8" y1="4" x2="8" y2="16"></line><line x1="12.5" y1="4" x2="12.5" y2="16"></line>',
+    download: '<path d="M10 3v10"></path><polyline points="6,9.5 10,13.5 14,9.5"></polyline><path d="M4 16.5h12"></path>',
+    upload: '<path d="M10 14V4"></path><polyline points="6,7.5 10,3.5 14,7.5"></polyline><path d="M4 16.5h12"></path>',
+    warn: '<path d="M10 3l7.5 13h-15z"></path><line x1="10" y1="8" x2="10" y2="11.5"></line><line x1="10" y1="14" x2="10" y2="14.2"></line>',
+    close: '<line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line>',
+    file: '<path d="M5 2.5h6.5L15 6v11.5H5z"></path><polyline points="11.5,2.5 11.5,6 15,6"></polyline><line x1="7.5" y1="10" x2="12.5" y2="10"></line><line x1="7.5" y1="13" x2="12.5" y2="13"></line>'
+  };
+
+  // ---------------------------------------------------------------------------------
+  // State (loaded from per-device storage)
+  // ---------------------------------------------------------------------------------
+  function loadTheme() { try { const t = localStorage.getItem(THEME_KEY); return t === 'dark' || t === 'system' ? t : 'light'; } catch (e) { return 'light'; } }
+  function loadColumns() {
+    const cols = defaultColumns();
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) || 'null');
+      if (saved) Object.keys(cols).forEach((k) => { if (typeof saved[k] === 'boolean') cols[k] = saved[k]; });
+    } catch (e) { /* storage unavailable — defaults */ }
+    return cols;
+  }
+  function save(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* this session only */ } }
+
+  // Automatic CSV backup file, written by the Bookings screen (prototype: browser storage).
+  const CSV_BACKUP_KEY = 'roastline.csvBackup';
+  function loadCsvBackup() {
+    try { return JSON.parse(localStorage.getItem(CSV_BACKUP_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function formatLocalIso(iso) { // "YYYY-MM-DDTHH:MM" → "Oct 8, 2:40 PM"
+    const d = iso.split('T')[0].split('-').map(Number), t = iso.split('T')[1].split(':').map(Number);
+    return new Date(d[0], d[1] - 1, d[2], t[0], t[1]).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function loadLastExport() { try { return localStorage.getItem(LAST_EXPORT_KEY); } catch (e) { return null; } }
+
+  const state = {
+    theme: loadTheme(),
+    columns: loadColumns(),
+    lastExportAt: loadLastExport(),   // ISO string or null
+    dataSheet: null,                  // 'export' | 'import' | null
+    importFile: null,                 // { name, exportedAt, appVersion, counts } once a valid file is chosen
+    importError: '',
+    pinPrompt: null,                  // PIN confirmation sheet (see requestPin)
+    toast: ''
+  };
+
+  let toastTimer = null;
+  function showToast(msg) {
+    state.toast = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { state.toast = ''; render(); }, 3000);
+  }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function fileStamp(d) { return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '-' + pad2(d.getHours()) + pad2(d.getMinutes()); }
+  function formatWhen(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function daysSince(iso) { return iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity; }
+  // Prototype stand-in for the share sheet: downloads the file in the browser.
+  function downloadFile(name, text, type) {
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: type || 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    } catch (e) { return false; }
+  }
+  // =================================================================================
+  // PIN confirmation for critical actions (same block in menu-, bookings- and settings-prototype.html)
+  // ---------------------------------------------------------------------------------
+  // Asked before: adding a product, saving product edits, activating/deactivating a
+  // product (Menu — asked every time), and recording a payment or using "Discount remaining
+  // balance" or cancelling (Bookings — a correct PIN is remembered for 3 minutes, via opts.rememberMs).
+  // The action only runs after the correct PIN. 5 wrong tries → 30-second wait, same rule
+  // as the lock screen. The remembered window is in memory only, so it ends when the app
+  // locks or closes.
+  //
+  // Prototype only: the PIN is read from browser storage, written by signin-prototype.html
+  // when a PIN is set or changed (falls back to 1234). In the real app this is
+  // AppLockService.ConfirmAsync(pin) checking the hashed PIN in SQLite, and the service
+  // method itself refuses to run without that fresh confirmation.
+  // =================================================================================
+  const PIN_KEY = 'roastline.pin';
+  const PIN_MIN = 4, PIN_MAX = 6, PIN_MAX_ATTEMPTS = 5, PIN_LOCK_SECONDS = 30;
+  const pinGuard = { failed: 0, lockedUntil: 0, timer: null, rememberedUntil: 0 };
+  function currentPin() { try { return localStorage.getItem(PIN_KEY) || '1234'; } catch (e) { return '1234'; } }
+  function pinLocked() { return Date.now() < pinGuard.lockedUntil; }
+  function pinSecondsLeft() { return Math.max(0, Math.ceil((pinGuard.lockedUntil - Date.now()) / 1000)); }
+
+  // opts: { detail, confirmLabel, rememberMs }. onConfirm runs only after the correct PIN and
+  // must render(). With rememberMs, a correct PIN skips the prompt for that long afterwards
+  // (fixed window from when the PIN was entered — it isn't extended by later actions).
+  function requestPin(opts, onConfirm) {
+    if (opts.rememberMs && Date.now() < pinGuard.rememberedUntil) { onConfirm(); return; }
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // closes the on-screen keyboard
+    state.pinPrompt = { detail: opts.detail || '', confirmLabel: opts.confirmLabel || 'Confirm', rememberMs: opts.rememberMs || 0, entry: '', message: '', shake: false, onConfirm };
+    render();
+  }
+  function startPinTimer() {
+    if (pinGuard.timer) clearInterval(pinGuard.timer);
+    pinGuard.timer = setInterval(() => {
+      if (!pinLocked()) { clearInterval(pinGuard.timer); pinGuard.timer = null; }
+      if (state.pinPrompt) render();
+    }, 1000);
+  }
+  const PinActions = {
+    key(d) {
+      const p = state.pinPrompt;
+      if (!p || pinLocked() || p.entry.length >= PIN_MAX) return;
+      p.entry += d; p.message = ''; render();
+    },
+    back() { const p = state.pinPrompt; if (!p || pinLocked()) return; p.entry = p.entry.slice(0, -1); render(); },
+    cancel() { state.pinPrompt = null; render(); },
+    submit() {
+      const p = state.pinPrompt;
+      if (!p || pinLocked() || p.entry.length < PIN_MIN) return;
+      if (p.entry === currentPin()) {
+        pinGuard.failed = 0;
+        if (p.rememberMs) pinGuard.rememberedUntil = Date.now() + p.rememberMs;
+        const run = p.onConfirm;
+        state.pinPrompt = null;
+        run();
+        return;
+      }
+      pinGuard.failed += 1;
+      p.entry = ''; p.shake = true;
+      if (pinGuard.failed >= PIN_MAX_ATTEMPTS) {
+        pinGuard.failed = 0;
+        pinGuard.lockedUntil = Date.now() + PIN_LOCK_SECONDS * 1000;
+        p.message = '';
+        startPinTimer();
+      } else {
+        const left = PIN_MAX_ATTEMPTS - pinGuard.failed;
+        p.message = 'Incorrect PIN. ' + left + (left === 1 ? ' try' : ' tries') + ' left.';
+      }
+      render();
+    }
+  };
+  function pinKeydown(e) {
+    if (/^[0-9]$/.test(e.key)) { PinActions.key(e.key); e.preventDefault(); }
+    else if (e.key === 'Backspace') { PinActions.back(); e.preventDefault(); }
+    else if (e.key === 'Enter') { PinActions.submit(); e.preventDefault(); }
+    else if (e.key === 'Escape') { PinActions.cancel(); e.preventDefault(); }
+  }
+  function renderPinPrompt() {
+    const p = state.pinPrompt;
+    if (!p) return '';
+    const locked = pinLocked();
+    const dis = locked ? 'disabled' : '';
+    const dots = p.entry.length === 0
+      ? '<span class="pin-hint">Enter your PIN</span>'
+      : Array.from({ length: p.entry.length }, () => '<span class="pin-dot"></span>').join('');
+    const msg = locked ? 'Too many tries. Try again in ' + pinSecondsLeft() + 's.' : p.message;
+    const digits = ['1','2','3','4','5','6','7','8','9'].map((d) => `<button type="button" class="pin-key" data-action="pin-key" data-digit="${d}" ${dis}>${d}</button>`).join('');
+    const html = `
+      <div class="backdrop pin-layer" data-action="pin-cancel"></div>
+      <div class="sheet bottom pin-layer" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+        <div class="sheet-grabber"></div>
+        <div class="pin-body">
+          <div class="pin-head">
+            <span class="pin-icon">${icon('<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>', 20)}</span>
+            <h2 id="pin-title">Enter your PIN to continue</h2>
+            <p class="pin-detail">${esc(p.detail)}</p>
+            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs and cancellations won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
+          </div>
+          <div class="pin-dots ${p.shake ? 'pin-shake' : ''}" aria-live="polite" aria-label="${p.entry.length} digits entered">${dots}</div>
+          <div class="pin-msg" role="alert">${esc(msg)}</div>
+          <div class="pin-keypad" role="group" aria-label="PIN keypad">
+            ${digits}
+            <button type="button" class="pin-key fn" data-action="pin-back" aria-label="Delete" ${dis}>${icon('<path d="M7 5h9.5v10H7l-4.5-5z"></path><line x1="10" y1="8" x2="14" y2="12"></line><line x1="14" y1="8" x2="10" y2="12"></line>', 22)}</button>
+            <button type="button" class="pin-key" data-action="pin-key" data-digit="0" ${dis}>0</button>
+            <button type="button" class="pin-key ok" data-action="pin-ok" ${locked || p.entry.length < PIN_MIN ? 'disabled' : ''}>${esc(p.confirmLabel)}</button>
+          </div>
+          <button type="button" class="btn pin-cancel" data-action="pin-cancel">Cancel</button>
+        </div>
+      </div>`;
+    if (p.shake) setTimeout(() => { if (state.pinPrompt) state.pinPrompt.shake = false; }, 400);
+    return html;
+  }
+  // ================= end PIN confirmation =================
+
+
+
+  const Actions = {
+    setTheme(theme) {
+      state.theme = theme === 'dark' || theme === 'system' ? theme : 'light';
+      save(THEME_KEY, state.theme);
+      if (window.__applyTheme) window.__applyTheme(); // also follows the device live when 'system'
+      render();
+    },
+    toggleColumn(key) {
+      state.columns[key] = !state.columns[key];
+      save(COLUMNS_KEY, JSON.stringify(state.columns));
+      render();
+    },
+    showAllColumns() {
+      state.columns = defaultColumns();
+      save(COLUMNS_KEY, JSON.stringify(state.columns));
+      render();
+    },
+
+    downloadCsv() {
+      const file = loadCsvBackup();
+      if (file) downloadFile(file.name, file.csv, 'text/csv');
+    },
+
+    // ---- Data: export / import ----
+    openDataSheet(which) { state.dataSheet = which; state.importFile = null; state.importError = ''; render(); },
+    closeDataSheet() { state.dataSheet = null; state.importFile = null; state.importError = ''; render(); },
+
+    exportData() {
+      requestPin({ detail: 'Export all bookings, payments and the menu to a backup file.', confirmLabel: 'Export' }, () => {
+        const now = new Date();
+        const name = 'roastline-backup-' + fileStamp(now) + BACKUP_EXT;
+        const payload = {
+          app: 'roastline', format: 1, appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION,
+          exportedAt: now.toISOString(), counts: SAMPLE_COUNTS, includesAppLock: false,
+          note: 'Prototype backup. The real app exports the SQLite database file, with the app_lock table emptied.'
+        };
+        downloadFile(name, JSON.stringify(payload, null, 2));
+        state.lastExportAt = now.toISOString();
+        save(LAST_EXPORT_KEY, state.lastExportAt);
+        state.dataSheet = null;
+        showToast('Backup saved: ' + name);
+        render();
+      });
+    },
+
+    chooseImportFile(file) {
+      state.importFile = null; state.importError = '';
+      if (!file) { render(); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        let data = null;
+        try { data = JSON.parse(String(reader.result)); } catch (e) { data = null; }
+        if (!data || data.app !== 'roastline' || !data.exportedAt) {
+          state.importError = "This file isn't a Roastline backup. Choose a file that ends in " + BACKUP_EXT + '.';
+        } else if (Number(data.schemaVersion) > SCHEMA_VERSION) {
+          state.importError = 'This backup was made by a newer version of Roastline (' + (data.appVersion || '?') + '). Update the app first, then import it.';
+        } else {
+          state.importFile = { name: file.name, exportedAt: data.exportedAt, appVersion: data.appVersion || '?', counts: data.counts || {} };
+        }
+        render();
+      };
+      reader.onerror = () => { state.importError = "Couldn't read that file. Try choosing it again."; render(); };
+      reader.readAsText(file);
+    },
+
+    importData() {
+      const f = state.importFile;
+      if (!f) return;
+      requestPin({ detail: 'Replace all data on this device with ' + f.name + '.', confirmLabel: 'Replace' }, () => {
+        state.dataSheet = null; state.importFile = null;
+        showToast('Data imported. Your PIN stays the same. Opening Bookings…');
+        render();
+        // The real app reloads its data and opens Bookings; it stays unlocked because the
+        // PIN didn't change (backups never carry the PIN).
+        setTimeout(() => { location.href = 'bookings-prototype.html'; }, 1800);
+      });
+    }
+  };
+
+  // ---------------------------------------------------------------------------------
+  // Templates
+  // ---------------------------------------------------------------------------------
+  function renderTopbar() {
+    return `
+      <header class="topbar"><div class="topbar-inner">
+        <div class="brand-mark"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${ICONS.flame}</svg></div>
+        <div class="topbar-titles"><h1>Settings</h1><span class="sub">PIN, data, appearance, and bookings list</span></div>
+      </div></header>`;
+  }
+
+  function renderBottomNav() {
+    return `
+      <nav class="bottomnav" aria-label="Main"><div class="bottomnav-inner">
+        <a class="navitem" href="bookings-prototype.html">${icon(ICONS.list, 22)}<span>Bookings</span></a>
+        <a class="navitem" href="menu-prototype.html">${icon(ICONS.flame, 22)}<span>Menu</span></a>
+        <a class="navitem active" href="settings-prototype.html" aria-current="page">${icon(ICONS.gear, 22)}<span>Settings</span></a>
+      </div></nav>`;
+  }
+
+  function renderSecurity() {
+    return `
+      <section class="section" aria-labelledby="sec-security">
+        <h2 class="section-title" id="sec-security">Security</h2>
+        <div class="set-card">
+          <a class="set-row" href="signin-prototype.html?mode=change">
+            <span class="set-icon">${icon(ICONS.key, 18)}</span>
+            <span class="set-text"><span class="set-title">Update PIN</span><span class="set-sub">Change the 4–6 digit PIN that opens Roastline</span></span>
+            <span class="set-trail">${icon(ICONS.chevron, 16)}</span>
+          </a>
+        </div>
+        <p class="caption" style="padding:0 2px;">Roastline locks itself whenever the app is reopened, and after 10 minutes without use. Your PIN is also asked before adding or editing menu items (every time), before recording a payment, waiving a remaining balance or cancelling a booking (remembered for 3 minutes), and every time you export or import data.</p>
+      </section>`;
+  }
+
+  function renderData() {
+    const days = daysSince(state.lastExportAt);
+    const warn = days > BACKUP_REMINDER_DAYS
+      ? `<div class="backup-warn" role="status">${icon(ICONS.warn, 18)}<span>${state.lastExportAt ? 'Your last backup was ' + Math.floor(days) + ' days ago.' : 'No backup yet.'} All data lives only on this phone. If it's lost or the app is removed, an exported backup is the only way to get it back.</span></div>`
+      : '';
+    return `
+      <section class="section" aria-labelledby="sec-data">
+        <h2 class="section-title" id="sec-data">Data</h2>
+        ${warn}
+        <div class="set-card">
+          <button type="button" class="set-row" data-action="open-data-sheet" data-sheet="export">
+            <span class="set-icon">${icon(ICONS.download, 18)}</span>
+            <span class="set-text"><span class="set-title">Export data</span><span class="set-sub">${state.lastExportAt ? 'Last export: ' + esc(formatWhen(state.lastExportAt)) : 'Save a backup file of all bookings and the menu'}</span></span>
+            <span class="set-trail">${icon(ICONS.chevron, 16)}</span>
+          </button>
+          <button type="button" class="set-row" data-action="open-data-sheet" data-sheet="import">
+            <span class="set-icon">${icon(ICONS.upload, 18)}</span>
+            <span class="set-text"><span class="set-title">Import data</span><span class="set-sub">Replace this device's data with a backup file</span></span>
+            <span class="set-trail">${icon(ICONS.chevron, 16)}</span>
+          </button>
+        </div>
+        ${renderCsvBackup()}
+      </section>`;
+  }
+
+  function renderCsvBackup() {
+    const f = loadCsvBackup();
+    const row = f ? `
+      <div class="set-row">
+        <span class="set-icon">${icon(ICONS.file, 18)}</span>
+        <span class="set-text"><span class="set-title mono" style="font-size:13.5px;">${esc(f.name)}</span><span class="set-sub">Saved ${esc(formatWhen(f.savedAt))} · ${f.rows} ${f.rows === 1 ? 'booking' : 'bookings'}<br>Pickups ${esc(formatLocalIso(f.from))} – ${esc(formatLocalIso(f.to))}</span></span>
+        <button type="button" class="icon-btn" data-action="csv-download" aria-label="Download ${esc(f.name)}">${icon(ICONS.download, 18)}</button>
+      </div>` : '<div class="set-row"><span class="set-sub">No CSV file yet. It\'s saved after you open Bookings.</span></div>';
+    return `
+      <div class="set-card">
+        <div class="set-block">
+          <span class="set-title">Automatic CSV backup</span>
+          <span class="set-sub">One file, <span class="mono">roastline-bookings-48h.csv</span>, in <b>Documents/Roastline</b>. It holds bookings with pickup from 24 hours before to 24 hours after each save, and is updated every hour while the app is open. Anyone with this unlocked phone can open it.</span>
+        </div>
+        ${row}
+      </div>`;
+  }
+
+  function bottomSheet(title, body) {
+    return `
+      <div class="backdrop" data-action="close-data-sheet"></div>
+      <div class="sheet bottom" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-header"><span class="sheet-title">${esc(title)}</span><button type="button" class="icon-btn" data-action="close-data-sheet" aria-label="Close">${icon(ICONS.close, 18)}</button></div>
+        <div class="sheet-body">${body}</div>
+      </div>`;
+  }
+
+  function renderExportSheet() {
+    return bottomSheet('Export data', `
+      <p class="caption">Creates one backup file with everything stored on this device:</p>
+      <ul class="incl">
+        <li>Bookings, items, payments and discounts</li>
+        <li>Menu (active and inactive products)</li>
+      </ul>
+      <p class="caption">Not included: your <b>PIN and recovery code</b> (they never leave this device), and theme and column settings.</p>
+      <p class="caption">Save the file somewhere off this phone — Google Drive, email, or a computer.</p>
+      <button type="button" class="btn btn-primary btn-block" data-action="export-data">${icon(ICONS.download, 16)} Export backup</button>`);
+  }
+
+  function renderImportSheet() {
+    const f = state.importFile;
+    const chooser = (label) => `
+      <label class="btn btn-block file-btn">${icon(ICONS.upload, 16)} ${label}
+        <input type="file" accept="${BACKUP_EXT},application/json" data-change="import-file" aria-label="${label}" />
+      </label>`;
+    if (!f) {
+      return bottomSheet('Import data', `
+        <div class="danger-note">Importing <b>replaces all bookings, payments and menu items on this device</b>. A safety copy of the current data is saved first.</div>
+        ${chooser('Choose backup file')}
+        ${state.importError ? `<p class="form-error" role="alert">${esc(state.importError)}</p>` : '<p class="caption">Pick a Roastline backup (' + BACKUP_EXT + ') exported from this or another device.</p>'}`);
+    }
+    const c = f.counts || {};
+    return bottomSheet('Import data', `
+      <div class="file-card">
+        <div class="file-row"><span class="k">File</span><span class="v">${esc(f.name)}</span></div>
+        <div class="file-row"><span class="k">Backup made</span><span class="v">${esc(formatWhen(f.exportedAt))}</span></div>
+        <div class="file-row"><span class="k">App version</span><span class="v">${esc(f.appVersion)}</span></div>
+        <div class="file-row"><span class="k">Contains</span><span class="v">${c.orders || 0} orders · ${c.items || 0} bookings · ${c.payments || 0} payments · ${c.products || 0} products</span></div>
+      </div>
+      ${DEVICE_BOOKING_COUNT > 0 ? `
+        <div class="backup-warn" role="alert">${icon(ICONS.warn, 18)}<span><b>This phone already has ${DEVICE_BOOKING_COUNT} ${DEVICE_BOOKING_COUNT === 1 ? 'booking' : 'bookings'}.</b> Importing replaces ${DEVICE_BOOKING_COUNT === 1 ? 'it' : 'them'} with the bookings in this backup. Export a backup first if you want to keep ${DEVICE_BOOKING_COUNT === 1 ? 'it' : 'them'}.</span></div>` : ''}
+      <div class="danger-note">Everything currently on this device will be replaced. <b>Your PIN and recovery code stay the same</b> — backups don't include them.</div>
+      <button type="button" class="btn btn-block btn-danger-solid" data-action="import-data">Replace data on this device</button>
+      ${chooser('Choose a different file')}`);
+  }
+
+  function renderAppearance() {
+    const seg = (value, label, ic) => `<button type="button" class="seg ${state.theme === value ? 'active' : ''}" role="radio" aria-checked="${state.theme === value}" data-action="set-theme" data-theme="${value}">${icon(ic, 16)} ${label}</button>`;
+    return `
+      <section class="section" aria-labelledby="sec-appearance">
+        <h2 class="section-title" id="sec-appearance">Appearance</h2>
+        <div class="set-card">
+          <div class="set-block">
+            <span class="set-title">Theme</span>
+            <div class="segmented theme-seg" role="radiogroup" aria-label="Theme">
+              ${seg('light', 'Light', ICONS.sun)}
+              ${seg('dark', 'Dark', ICONS.moon)}
+              ${seg('system', 'Device', ICONS.device)}
+            </div>
+            <span class="caption">${state.theme === 'system' ? "Matching your phone's setting — switches between light and dark when the phone does." : 'Choose Device to match your phone’s light or dark setting.'}</span>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function renderColumns() {
+    const hidden = COLUMN_FIELDS.filter((f) => !state.columns[f.key]).length;
+    const rows = COLUMN_FIELDS.map((f) => {
+      const on = !!state.columns[f.key];
+      return `
+        <div class="set-row">
+          <span class="set-text"><span class="set-title">${esc(f.label)}</span></span>
+          <button type="button" class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on}" aria-label="Show ${esc(f.label)}" data-action="toggle-column" data-key="${f.key}"><span></span></button>
+        </div>`;
+    }).join('');
+    return `
+      <section class="section" aria-labelledby="sec-columns">
+        <h2 class="section-title" id="sec-columns">Bookings list · Columns to show</h2>
+        <div class="set-card">
+          <div class="set-row">
+            <span class="set-text"><span class="set-title">Booking ID</span></span>
+            <span class="always">Always shown</span>
+          </div>
+          ${rows}
+        </div>
+        <div class="set-foot">
+          <span class="caption">${hidden === 0 ? 'Every column is shown.' : hidden + (hidden === 1 ? ' column hidden' : ' columns hidden') + ' on the Bookings list.'}</span>
+          ${hidden > 0 ? '<button type="button" class="link-btn" data-action="show-all-columns">Show all</button>' : ''}
+        </div>
+      </section>`;
+  }
+
+  const appEl = document.getElementById('app');
+  function render() {
+    const y = window.scrollY;
+    appEl.innerHTML = `
+      <div class="app no-fab">
+        ${renderTopbar()}
+        <main class="content" style="gap:18px;">
+          ${renderSecurity()}
+          ${renderData()}
+          ${renderAppearance()}
+          ${renderColumns()}
+          <p class="version">Roastline · version 1.0.0 (prototype)</p>
+        </main>
+      </div>
+      ${renderBottomNav()}
+      ${state.dataSheet === 'export' ? renderExportSheet() : ''}
+      ${state.dataSheet === 'import' ? renderImportSheet() : ''}
+      ${renderPinPrompt()}
+      ${state.toast && !state.dataSheet && !state.pinPrompt ? `<div class="toast" role="status">${esc(state.toast)}</div>` : ''}`;
+    document.body.classList.toggle('no-scroll', !!(state.dataSheet || state.pinPrompt));
+    window.scrollTo(0, y);
+  }
+
+  appEl.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    switch (el.dataset.action) {
+      case 'set-theme': Actions.setTheme(el.dataset.theme); break;
+      case 'toggle-column': Actions.toggleColumn(el.dataset.key); break;
+      case 'show-all-columns': Actions.showAllColumns(); break;
+      case 'open-data-sheet': Actions.openDataSheet(el.dataset.sheet); break;
+      case 'close-data-sheet': Actions.closeDataSheet(); break;
+      case 'export-data': Actions.exportData(); break;
+      case 'import-data': Actions.importData(); break;
+      case 'csv-download': Actions.downloadCsv(); break;
+      case 'pin-key': PinActions.key(el.dataset.digit); break;
+      case 'pin-back': PinActions.back(); break;
+      case 'pin-ok': PinActions.submit(); break;
+      case 'pin-cancel': PinActions.cancel(); break;
+      default: break;
+    }
+  });
+
+  appEl.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.dataset && el.dataset.change === 'import-file') Actions.chooseImportFile(el.files && el.files[0]);
+  });
+
+  // Escape (Android back in the real app) closes the top-most layer first.
+  document.addEventListener('keydown', (e) => {
+    if (state.pinPrompt) { pinKeydown(e); return; }
+    if (e.key === 'Escape' && state.dataSheet) Actions.closeDataSheet();
+  });
+
+  render();
+</script>
+</body>
+</html>
