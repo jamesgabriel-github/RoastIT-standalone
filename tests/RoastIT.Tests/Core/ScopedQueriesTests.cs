@@ -18,16 +18,16 @@ public sealed class ScopedQueriesTests : BookingsTestBase
 
         // Tomorrow: a two-booking order with a discount and a payment, a single booking, and a fully cancelled order with money on it.
         var big = await CreateFullAsync("Diego Santos", Local(2026, 11, 8, 10), 50000, 300000, (lechon, 1), (crispy, 1));
-        await CreateFullAsync(null, Local(2026, 11, 8, 15), 0, 0, (liempo, 2));
+        await CreateFullAsync(null, Local(2026, 11, 8, 15), 0, 0, (liempo, 1), (liempo, 1));
         var dead = await CreateFullAsync("Gone", Local(2026, 11, 8, 18), 0, 100000, (lechon, 1));
         await Orders.CancelOrderAsync(dead.OrderKey, await BookingsPinAsync());
         await Bookings.AdvanceStatusAsync(big.Units[0].BookingId, ItemStatus.Pending);
 
         // Today and next week, so "all dates" spans several days; one order fully paid.
         await CreateFullAsync("Grace Villanueva", Local(2026, 11, 7, 18), 0, 440000, (lechon, 1));
-        await CreateFullAsync("Ana Reyes", Local(2026, 11, 14, 12), 0, 0, (crispy, 3));
+        await CreateFullAsync("Ana Reyes", Local(2026, 11, 14, 12), 0, 0, (crispy, 1), (crispy, 1), (crispy, 1));
         // Same balance and pickup as another order: the tie-break must be stable.
-        await CreateFullAsync("Ben Cruz", Local(2026, 11, 14, 12), 0, 0, (crispy, 3));
+        await CreateFullAsync("Ben Cruz", Local(2026, 11, 14, 12), 0, 0, (crispy, 1), (crispy, 1), (crispy, 1));
     }
 
     private static string Json(DashboardData d) => JsonSerializer.Serialize(d);
@@ -36,7 +36,7 @@ public sealed class ScopedQueriesTests : BookingsTestBase
     private async Task AddOutsideWindowAsync()
     {
         var old = await AddProductAsync("Old roast", 999900);
-        await CreateFullAsync("Last year", Local(2026, 6, 1), 0, 0, (old, 2));
+        await CreateFullAsync("Last year", Local(2026, 6, 1), 0, 0, (old, 1), (old, 1));
         RoastIT.Tests.Sql.Exec(Fx.DbPath, "UPDATE orders SET pickup_at = '2025-11-01 02:00:00' WHERE customer = 'Last year';");
     }
 

@@ -16,13 +16,13 @@
         <div class="created-ids" id="created-ids" aria-label="@(n == 1 ? "Booking ID" : "Booking IDs")">
             @if (n == 1)
             {
-                <div class="created-id single"><span class="mono">@c.Units[0].BookingId</span><span class="prod">@c.Units[0].ProductName</span></div>
+                <div class="created-id single"><span class="mono">@c.Units[0].BookingId</span><span class="prod">@c.Units[0].ProductName · @Weight.Format(c.Units[0].WeightGrams)</span></div>
             }
             else
             {
                 foreach (var unit in c.Units)
                 {
-                    <div class="created-id"><span class="mono">@unit.BookingId</span><span class="prod">@unit.ProductName</span></div>
+                    <div class="created-id"><span class="mono">@unit.BookingId</span><span class="prod">@unit.ProductName · @Weight.Format(unit.WeightGrams)</span></div>
                 }
             }
         </div>

@@ -44,15 +44,17 @@
                                         @key="product.Id" @onclick="() => line.ProductId = product.Id">
                                     <span class="prod-name">@product.Name</span>
                                     <span class="prod-meta">@DurationFormat.Format(product.CookingTimeMin)</span>
-                                    <span class="prod-price">@Money.Format(product.Price)</span>
+                                    <span class="prod-price">@Money.Format(product.Price)<span class="per-kg">/kg</span></span>
                                 </button>
                             }
                         </div>
                         <div class="line-foot">
-                            <div class="stepper">
-                                <button type="button" aria-label="Fewer" @onclick="() => Step(line, -1)">−</button>
-                                <input type="number" inputmode="numeric" min="1" step="1" aria-label="Quantity" @bind="line.Qty" @bind:event="oninput" />
-                                <button type="button" aria-label="More" @onclick="() => Step(line, 1)">+</button>
+                            <div class="stepper weight">
+                                <button type="button" aria-label="0.5 kg less" @onclick="() => Step(line, -1)">−</button>
+                                <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Weight in kilos"
+                                       @bind="line.Kilos" @bind:event="oninput" />
+                                <span class="unit" aria-hidden="true">kg</span>
+                                <button type="button" aria-label="0.5 kg more" @onclick="() => Step(line, 1)">+</button>
                             </div>
                             <div class="subtotal">
                                 <span class="caption">Subtotal</span>
@@ -102,7 +104,9 @@
     private sealed class Line
     {
         public Guid ProductId { get; set; }
-        public string Qty { get; set; } = "1";
+
+        /// <summary>The weight as typed, in kilos ("3.2"). One line is one booking, however heavy (D34).</summary>
+        public string Kilos { get; set; } = "";
     }
 
     private string _customer = "", _phone = "", _discount = "", _paid = "", _error = "";
@@ -162,7 +166,7 @@
         catch (AccessDeniedException) { }
     }
 
-    private Line NewLine() => new() { ProductId = _products[0].Id, Qty = "1" };
+    private Line NewLine() => new() { ProductId = _products[0].Id };
 
     private void AddLine()
     {
@@ -172,24 +176,22 @@
     private void RemoveLine(int index)
     {
         if (_lines.Count > 1) _lines.RemoveAt(index);
-        else if (_products.Count > 0) _lines[0] = NewLine(); // Reset: first product × 1
+        else if (_products.Count > 0) _lines[0] = NewLine(); // Reset: first product, no weight
     }
 
-    // ---- Quantities and totals (a preview; the service recomputes) --------------------
+    // ---- Weights and totals (a preview; the service recomputes) -----------------------
 
-    /// <summary>The typed quantity rounded to a whole number, at least 0 when it can't be read.</summary>
-    private static int QtyOf(Line line) =>
-        double.TryParse(line.Qty, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var q) && q is >= 0 and < 100000
-            ? (int)Math.Round(q, MidpointRounding.AwayFromZero)
-            : 0;
+    /// <summary>The typed weight in grams, or 0 when it is blank or can't be read (see <see cref="Weight.TryParseKilos"/>).</summary>
+    private static int GramsOf(Line line) => Weight.TryParseKilos(line.Kilos, out var grams) ? grams : 0;
 
-    private void Step(Line line, int delta) => line.Qty = Math.Max(1, QtyOf(line) + delta).ToString();
+    // The first press on an empty field starts at 0.5 kg; − never goes below the minimum weight.
+    private void Step(Line line, int direction) => line.Kilos = Weight.ToFieldText(Weight.Step(GramsOf(line), direction));
 
     private long Subtotal(Line line)
     {
         var product = _products.FirstOrDefault(p => p.Id == line.ProductId);
-        var qty = QtyOf(line);
-        return product is null || qty < 1 ? 0 : product.Price * qty;
+        var grams = GramsOf(line);
+        return product is null || grams == 0 ? 0 : OrderMath.LineTotal(product.Price, grams);
     }
 
     private long Total => _lines.Sum(Subtotal);
@@ -206,8 +208,16 @@
     {
         if (_busy) return;
 
-        var lines = _lines.Where(l => QtyOf(l) >= 1).Select(l => new NewBookingLine(l.ProductId, QtyOf(l))).ToList();
-        if (lines.Count == 0) return; // nothing to book: nothing happens
+        if (_lines.Count == 0) return; // nothing to book: nothing happens
+
+        // Every line needs a weight; a blank or unreadable one is told about instead of being silently dropped (D34).
+        // Weight.Min..Max is checked again by the service.
+        if (_lines.Any(l => GramsOf(l) == 0))
+        {
+            _error = BookingMessages.WeightInvalid;
+            return;
+        }
+        var lines = _lines.Select(l => new NewBookingLine(l.ProductId, GramsOf(l))).ToList();
 
         _busy = true;
         try

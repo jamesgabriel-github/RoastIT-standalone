@@ -15,7 +15,7 @@ Last updated: 2026-11-07 (Phase 4 done, Phase 5 on hold). Read this first in a n
 | 5 — Release | **On hold** by the owner (2026-11-07). Not started | |
 
 Build state: Android and Windows targets build with 0 errors and
-0 warnings. 386 tests pass, 1 skipped (`dotnet test tests\RoastIT.Tests`; the skipped one is the opt-in ten-year timing).
+0 warnings. 465 tests pass, 1 skipped (`dotnet test tests\RoastIT.Tests`; the skipped one is the opt-in ten-year timing).
 
 ## Environment (this machine)
 
@@ -226,6 +226,26 @@ indexes), `Core/SettingsRulesTests` (texts, columns, `ExternalActivityGuard`), `
   are unchanged. `KitchenChartLayout.Build` takes the date and now; `app.js` gained `scrollLeftTo`. The bookings prototype, spec §11 and plan
   §7.6 are updated to match.
 
+## D34 weights in kilos (owner's request after the Phase 4 checkpoint; plan §7.1, §7.2, bookings spec §9)
+
+The New booking form's quantity was a **count that created one booking (and one ID) per unit**. It is now a **weight in
+kilos**: one product line = one booking = one ID, with `items.weight_g` (whole grams). A product's price is per kilo, so a line
+costs `OrderMath.LineTotal(price, grams)`, rounded to the centavo. Open points are in Q38. Both targets build with 0 warnings;
+465 tests pass, 1 skipped.
+
+- Core: `Rules/Weight` (parse "3.2" → 3200, format, ± 0.5 kg steps, limits 0.01 – 500 kg), `OrderMath.LineTotal`,
+  `Item.WeightGrams`, `BookingRow.WeightGrams`, `NewBookingLine(ProductId, WeightGrams)`, `NewItemDraft`, `CreatedUnit.WeightGrams`,
+  `BookingMessages.WeightInvalid`. `BookingLimits.MaxUnitsPerOrder` (100) now caps **lines**, not kilos.
+- Data: migration `AddItemWeight` (`weight_g INTEGER NOT NULL DEFAULT 1000`, additive). Bookings made before it count as 1 kg.
+  `DatabaseInitializerTests` now expects `schema_version = 5`.
+- UI: `NewBookingSheet` has a decimal kg field with a "kg" label and − / + (0.5 kg); product cards read "₱2,200/kg"; a blank or
+  invalid weight shows the inline message. The weight also shows on the booking card ("Lechon Belly · 3.2 kg"), the detail
+  sheet (*Weight* row) and the Booking created dialog. The CSV has a new **Weight (kg)** column after *Product*.
+- **Not done:** the HTML prototypes (`bookings-prototype*.html`) still show the old integer stepper. The Menu page still shows a
+  plain price (not "/kg"). Neither the Dashboard's Product mix nor the kitchen load counts kilos (they count bookings).
+- **Not run on a device.** Please check on the phone: type `3.2` and get ₱ price × 3.2; the − / + buttons; two lines make two IDs;
+  a blank weight shows the message; the decimal keyboard in light and dark mode; the card, detail and created dialog show the kilos.
+
 ## Phase 1 device checkpoint (run by the user, Android)
 
 Fresh install (or Clear storage):
@@ -269,8 +289,8 @@ After installing over the Phase 2 build, the `AddBookingsDomain` migration runs 
 1. **Date strip and calendar.** The strip starts two days before today, shows count badges, the arrows stop at ±6 months, tapping
    the selected day clears it (All), and picking a far date in the calendar moves the strip to it (scrolled back to its start).
    Calendar: month arrows stop at the window edges, dots on days with bookings, Today / Clear date, the window caption.
-2. **New booking.** The product cards show active products only (not the inactive one). Two lines (qty 3 + qty 1) create four
-   sequential IDs (`YYMMDD-001 … 004`). The *Booking created* dialog lists them, stays open until Done, ignores a backdrop tap,
+2. **New booking.** The product cards show active products only (not the inactive one). *(Phase 3 wording; since D34 the
+   quantity is kilos: two lines of 3.2 kg and 1 kg create two IDs, `YYMMDD-001` and `002`.)* The *Booking created* dialog lists them, stays open until Done, ignores a backdrop tap,
    and Back closes it. Totals and the *Create booking · ₱…* label update while typing without losing focus. The date-time picker
    works on Android (default is now + 5 hours). A blank customer shows as *Walk-in customer*.
 3. **Booking list.** Search finds IDs, products, customers and "walk-in". Chips show global counts. The sort sheet shows the labels
@@ -373,6 +393,6 @@ Things to keep in mind from Phase 4:
 ## Working agreements (from CLAUDE.md, repeated because they matter)
 
 Build phase by phase and finish each checkpoint. Check the decision log before changing behaviour;
-changes get a new `D` row, new questions get the next `Q` number (next free: Q38 / D33). Add tests
+changes get a new `D` row, new questions get the next `Q` number (next free: Q39 / D35). Add tests
 for every rule touched, with real SQLite. Money is `long` centavos; times are UTC `DateTime`,
 "today" comes from `IBusinessCalendar` (Asia/Manila). Never log the PIN, its hash or the recovery code.

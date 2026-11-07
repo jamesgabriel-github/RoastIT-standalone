@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using RoastIT.Core.Abstractions;
 using RoastIT.Core.Entities;
 using RoastIT.Core.Enums;
+using RoastIT.Core.Rules;
 using RoastIT.Core.Services;
 using RoastIT.Data;
 using RoastIT.Data.Repositories;
@@ -71,10 +72,10 @@ public sealed class TestDevice : IDisposable
         return product;
     }
 
-    /// <summary>One order for tomorrow 10:00 Manila with <paramref name="qty"/> units and a payment.</summary>
-    public Task<CreatedBooking> BookAsync(Product product, string customer, int qty = 1, long paid = 0) =>
+    /// <summary>One order for tomorrow 10:00 Manila with <paramref name="bookings"/> bookings of 1 kg each, and a payment.</summary>
+    public Task<CreatedBooking> BookAsync(Product product, string customer, int bookings = 1, long paid = 0) =>
         Bookings.CreateAsync(new NewBookingInput(customer, null, Calendar.ToUtc(new DateTime(2026, 11, 8, 10, 0, 0)),
-            [new NewBookingLine(product.Id, qty)], 0, paid));
+            Enumerable.Range(0, bookings).Select(_ => new NewBookingLine(product.Id, Weight.GramsPerKilo)).ToList(), 0, paid));
 
     public string Scalar(string sql) => Sql.Scalar(DbPath, sql);
 

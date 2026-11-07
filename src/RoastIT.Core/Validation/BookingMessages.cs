@@ -6,7 +6,7 @@ public static class BookingLimits
     public const int CustomerMax = 80;
     public const int PhoneMax = 30;
 
-    /// <summary>Bookings (units) in one order. Keeps a mistyped quantity from creating thousands of rows.</summary>
+    /// <summary>Bookings (product lines) in one order. A line is one booking whatever its weight (D34).</summary>
     public const int MaxUnitsPerOrder = 100;
 }
 
@@ -18,6 +18,7 @@ public static class BookingMessages
     public const string CustomerTooLong = "Customer name can't be longer than 80 characters.";
     public const string PhoneTooLong = "Phone number can't be longer than 30 characters.";
     public const string TooManyUnits = "An order can have at most 100 bookings.";
+    public const string WeightInvalid = "Enter a weight between 0.01 and 500 kg for every item.";
     public const string ProductGone = "That product isn't on the menu any more.";
     public const string OrderGone = "That booking isn't there any more.";
     public const string OrderCancelled = "This order is cancelled.";

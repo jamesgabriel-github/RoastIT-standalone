@@ -5,10 +5,13 @@ using RoastIT.Core.Rules;
 namespace RoastIT.Core.Abstractions;
 
 /// <summary>
-/// A new order ready to save: the order (no items yet; it may carry one initial payment), one product id per unit,
-/// the business date the booking IDs are numbered for, and the audit rows to write with it.
+/// A new order ready to save: the order (no items yet; it may carry one initial payment), one entry per booking (product
+/// and weight, D34), the business date the booking IDs are numbered for, and the audit rows to write with it.
 /// </summary>
-public sealed record NewOrderDraft(Order Order, IReadOnlyList<Guid> UnitProductIds, DateOnly BookingDate, IReadOnlyList<AuditLog> Audit);
+public sealed record NewOrderDraft(Order Order, IReadOnlyList<NewItemDraft> Items, DateOnly BookingDate, IReadOnlyList<AuditLog> Audit);
+
+/// <summary>One booking to create: a product and how much of it, in grams.</summary>
+public sealed record NewItemDraft(Guid ProductId, int WeightGrams);
 
 /// <summary>What a mutation of an order returns: a result for the caller, and audit rows to save with the change.</summary>
 public sealed record OrderMutation<T>(T Result, IReadOnlyList<AuditLog> Audit);

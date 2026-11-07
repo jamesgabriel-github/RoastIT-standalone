@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using RoastIT.Core.Entities;
+using RoastIT.Core.Rules;
 
 namespace RoastIT.Data.Configurations;
 
@@ -44,6 +45,8 @@ public sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         b.Property(x => x.BookingId).HasColumnName("booking_id").ValueGeneratedNever();
         b.Property(x => x.OrderKey).HasColumnName("order_key");
         b.Property(x => x.ProductId).HasColumnName("product_id");
+        // Grams (D34). Bookings made before the column existed were one unit each, so they weigh 1 kg (Weight.LegacyGrams).
+        b.Property(x => x.WeightGrams).HasColumnName("weight_g").HasDefaultValue(Weight.LegacyGrams);
         b.Property(x => x.Status).HasColumnName("status");               // ItemStatus as INTEGER, pipeline order
         b.Property(x => x.StartedCookingAt).HasColumnName("started_cooking_at");
 

@@ -7,8 +7,11 @@ using RoastIT.Core.Validation;
 
 namespace RoastIT.Core.Services;
 
-/// <summary>One line of the New booking form: a product and how many units.</summary>
-public sealed record NewBookingLine(Guid ProductId, int Quantity);
+/// <summary>
+/// One line of the New booking form: a product and how much of it, in grams (D34). Each line becomes one booking, however
+/// heavy it is; the weight is not a count of bookings.
+/// </summary>
+public sealed record NewBookingLine(Guid ProductId, int WeightGrams);
 
 /// <summary>
 /// The New booking form (bookings spec §9). <see cref="PickupAtUtc"/> is a UTC instant (the form converts the business-local
@@ -22,7 +25,7 @@ public sealed record NewBookingInput(
     long Discount = 0,
     long PaidNow = 0);
 
-public sealed record CreatedUnit(string BookingId, string ProductName);
+public sealed record CreatedUnit(string BookingId, string ProductName, int WeightGrams);
 
 /// <summary>What the "Booking created" dialog shows (bookings spec §9.1).</summary>
 public sealed record CreatedBooking(Guid OrderKey, string CustomerLabel, DateTime PickupAtUtc, IReadOnlyList<CreatedUnit> Units, long NetTotal);
@@ -109,7 +112,8 @@ public sealed class BookingService(
     }
 
     /// <summary>
-    /// Creates one order with one booking per unit (plan §7.2). The total is recomputed from current catalog prices, inactive
+    /// Creates one order with one booking per line (plan §7.2, D34). The total is recomputed from current catalog prices (per
+    /// kilo) × each line's weight, inactive
     /// products are refused, the discount is clamped to [0, total] and the paid amount to ≥ 0 (a payment row is written when
     /// it is above 0). IDs are claimed as one block in the same transaction as the insert.
     /// </summary>
@@ -122,10 +126,10 @@ public sealed class BookingService(
         if (customer is { Length: > BookingLimits.CustomerMax }) throw new ValidationException(BookingMessages.CustomerTooLong);
         if (phone is { Length: > BookingLimits.PhoneMax }) throw new ValidationException(BookingMessages.PhoneTooLong);
 
-        var lines = input.Lines.Where(l => l.Quantity >= 1).ToList();
+        var lines = input.Lines;
         if (lines.Count == 0) throw new ValidationException(BookingMessages.NoItems);
-        var units = lines.Sum(l => (long)l.Quantity);
-        if (units > BookingLimits.MaxUnitsPerOrder) throw new ValidationException(BookingMessages.TooManyUnits);
+        if (lines.Count > BookingLimits.MaxUnitsPerOrder) throw new ValidationException(BookingMessages.TooManyUnits);
+        if (lines.Any(l => l.WeightGrams is < Weight.MinGrams or > Weight.MaxGrams)) throw new ValidationException(BookingMessages.WeightInvalid);
 
         var today = calendar.Today();
         var pickupDate = calendar.DateOf(input.PickupAtUtc);
@@ -133,18 +137,15 @@ public sealed class BookingService(
 
         var catalog = (await products.ListAsync(ct)).ToDictionary(p => p.Id);
         long total = 0;
-        var unitProducts = new List<Guid>();
-        var created = new List<(Guid ProductId, string Name)>();
+        var drafts = new List<NewItemDraft>();
+        var created = new List<(string Name, int WeightGrams)>();
         foreach (var line in lines)
         {
             if (!catalog.TryGetValue(line.ProductId, out var product)) throw new StaleStateException(BookingMessages.ProductGone);
             if (!product.Active) throw new ValidationException(BookingMessages.NotAvailable(product.Name));
-            total = checked(total + product.Price * line.Quantity);
-            for (var i = 0; i < line.Quantity; i++)
-            {
-                unitProducts.Add(product.Id);
-                created.Add((product.Id, product.Name));
-            }
+            total = checked(total + OrderMath.LineTotal(product.Price, line.WeightGrams));
+            drafts.Add(new NewItemDraft(product.Id, line.WeightGrams));
+            created.Add((product.Name, line.WeightGrams));
         }
 
         var discount = OrderMath.Clamp(input.Discount, total);
@@ -173,14 +174,14 @@ public sealed class BookingService(
                 new { amount = paid, paidBefore = 0L, paidAfter = paid, atCreation = true }));
         }
 
-        var ids = await store.AddOrderAsync(new NewOrderDraft(order, unitProducts, today, audit), ct);
+        var ids = await store.AddOrderAsync(new NewOrderDraft(order, drafts, today, audit), ct);
 
         changes.NotifyBookingsChanged(pickupDate);
         return new CreatedBooking(
             order.Key,
             BookingFormat.CustomerLabel(customer),
             order.PickupAt,
-            ids.Select((id, i) => new CreatedUnit(id, created[i].Name)).ToList(),
+            ids.Select((id, i) => new CreatedUnit(id, created[i].Name, created[i].WeightGrams)).ToList(),
             OrderMath.NetTotal(total, discount));
     }
 

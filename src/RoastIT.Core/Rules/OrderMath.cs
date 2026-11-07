@@ -16,6 +16,13 @@ public static class OrderMath
 
     public static long Balance(Order o) => Balance(o.TotalAmount, o.DiscountAmount, o.AmountPaid);
 
+    /// <summary>
+    /// What one booking costs: the product's price is per kilo (D34), so price × weight, rounded to the nearest centavo
+    /// (halves away from zero). Decimal maths, so 3.2 kg of ₱2,200 is exactly ₱7,040.
+    /// </summary>
+    public static long LineTotal(long pricePerKilo, int weightGrams) =>
+        (long)Math.Round((decimal)pricePerKilo * weightGrams / Weight.GramsPerKilo, 0, MidpointRounding.AwayFromZero);
+
     /// <summary>A discount is a flat amount within [0, total].</summary>
     public static long Clamp(long discount, long total) => Math.Min(Math.Max(discount, 0), Math.Max(total, 0));
 

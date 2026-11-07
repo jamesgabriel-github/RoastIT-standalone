@@ -10,10 +10,10 @@ namespace RoastIT.Tests.Core;
 
 public class OrderServiceTests : BookingsTestBase
 {
-    private async Task<(Guid Key, string[] Ids)> NewOrderAsync(long price = 100000, int qty = 1, long discount = 0, long paid = 0)
+    private async Task<(Guid Key, string[] Ids)> NewOrderAsync(long price = 100000, int bookings = 1, long discount = 0, long paid = 0)
     {
         var p = await AddProductAsync("Lechon Belly", price);
-        var created = await CreateFullAsync("Diego Santos", null, discount, paid, (p, qty));
+        var created = await CreateFullAsync("Diego Santos", null, discount, paid, Enumerable.Repeat((p, 1.0), bookings).ToArray());
         Events.Clear();
         return (created.OrderKey, created.Units.Select(u => u.BookingId).ToArray());
     }
@@ -231,7 +231,7 @@ public class OrderServiceTests : BookingsTestBase
     [Fact]
     public async Task Cancel_is_refused_without_a_PIN_confirmation_and_changes_nothing()
     {
-        var (key, _) = await NewOrderAsync(qty: 2);
+        var (key, _) = await NewOrderAsync(bookings: 2);
 
         await Assert.ThrowsAsync<PinRequiredException>(() => Orders.CancelOrderAsync(key, null));
 
@@ -242,7 +242,7 @@ public class OrderServiceTests : BookingsTestBase
     [Fact]
     public async Task Cancel_cancels_every_item_of_the_order_and_keeps_money_and_payments()
     {
-        var (key, ids) = await NewOrderAsync(price: 220000, qty: 2, paid: 200000);
+        var (key, ids) = await NewOrderAsync(price: 220000, bookings: 2, paid: 200000);
         await SetStatusAsync(ids[1], ItemStatus.Cooking);
 
         var cancelled = await Orders.CancelOrderAsync(key, await BookingsPinAsync());
@@ -265,7 +265,7 @@ public class OrderServiceTests : BookingsTestBase
     [InlineData(ItemStatus.Completed)]
     public async Task Cancel_is_refused_once_any_item_is_cooked_or_completed_and_nothing_changes(ItemStatus blocking)
     {
-        var (key, ids) = await NewOrderAsync(qty: 2);
+        var (key, ids) = await NewOrderAsync(bookings: 2);
         await SetStatusAsync(ids[0], blocking);
         var pin = await BookingsPinAsync();
 
@@ -281,7 +281,7 @@ public class OrderServiceTests : BookingsTestBase
     [Fact]
     public async Task Cancel_rechecks_at_save_time_when_the_order_moved_on_after_the_PIN()
     {
-        var (key, ids) = await NewOrderAsync(qty: 2);
+        var (key, ids) = await NewOrderAsync(bookings: 2);
         var pin = await BookingsPinAsync();   // the sheet was open and the PIN entered...
         await Bookings.AdvanceStatusAsync(ids[0], ItemStatus.Pending);
         await Bookings.AdvanceStatusAsync(ids[0], ItemStatus.Cooking);   // ...meanwhile one item got cooked
@@ -303,7 +303,7 @@ public class OrderServiceTests : BookingsTestBase
     [Fact]
     public async Task Already_cancelled_items_stay_as_they_are_when_the_rest_is_cancelled()
     {
-        var (key, ids) = await NewOrderAsync(qty: 3);
+        var (key, ids) = await NewOrderAsync(bookings: 3);
         await SetStatusAsync(ids[1], ItemStatus.Cancelled);
 
         var cancelled = await Orders.CancelOrderAsync(key, await BookingsPinAsync());

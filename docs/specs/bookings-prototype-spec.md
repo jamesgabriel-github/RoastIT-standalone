@@ -458,31 +458,36 @@ WebViews block silently. Fields in order:
 | Phone *(optional)* | `tel` input | blank | Placeholder *0917 000 0000*. Trimmed |
 | Pickup date & time | Date-time picker, min/max = window | see §14 | Business time |
 | *ITEMS* (group label) | | | |
-| Item line(s) | Line card (below) | one line: first active product, qty 1 | |
-| **+ Add another item** | Dashed button | | Adds a line (first product, qty 1) |
+| Item line(s) | Line card (below) | one line: first active product, weight blank | |
+| **+ Add another item** | Dashed button | | Adds a line (first product, weight blank) |
 | Summary card | see below | | |
 
 **Item line card**
 
 - `--surface-2`, border, radius 14, padding 12 × 14, 12 px gap.
 - **Header:** *ITEM 1* (group label) + text button **Remove**, or
-  **Reset** when it's the only line (Reset sets it back to first product
-  × 1).
+  **Reset** when it's the only line (Reset sets it back to the first
+  product, weight blank).
 - **Product picker:** sideways-scrolling row of product cards
   (`role="radiogroup"`).
   - Card 136 px wide, radius 12, 1.5 px border, padding 10: name (13.5 px
-    bold), cooking time (11.5 px muted), price (mono 13 px).
+    bold), cooking time (11.5 px muted), price per kilo (mono 13 px,
+    followed by a small muted */kg*).
   - Selected: accent border, accent 8% tint.
   - **Active products only.**
 - **Footer row:**
-  - Stepper: **−** (44 px) · qty field (52 px, mono 16 px, numeric) · **+**.
-    Minimum 1. The buttons step from the rounded current value.
+  - **Weight stepper (D34):** **−** (44 px) · weight field (72 px, mono
+    16 px, decimal keyboard) · a fixed *kg* label · **+**. The quantity is a
+    **weight in kilos**, e.g. *3.2*, not a number of bookings: one line is
+    one booking whatever it weighs. Up to 2 decimals, 0.01 – 500 kg. The
+    buttons move by 0.5 kg from the current value (an empty field starts at
+    0.5; − stops at 0.5).
   - Subtotal on the right: caption *Subtotal* over mono 15 px bold
-    *₱4,400*.
+    *₱7,040* (price per kilo × kilos, rounded to the centavo).
 
 **Summary card** (border, radius 14, padding 14, 12 px gap)
 
-1. *Order total* — sum of price × qty for all lines.
+1. *Order total* — sum of price per kilo × kilos for all lines.
 2. *Discount (optional)* — ₱ field.
 3. *Net total* (16 px bold) — only when the discount, clamped to
    [0, total], is > 0.
@@ -496,13 +501,15 @@ submit label update; the fields themselves don't re-render.
 
 **Create** (`BookingService.CreateAsync`, no PIN)
 
-1. Keep lines with a product and qty ≥ 1 (qty rounded). None left:
-   nothing happens.
+1. Every line needs a valid weight (0.01 – 500 kg). A blank or invalid
+   one stops the save with the inline message *Enter a weight between
+   0.01 and 500 kg for every item.* (lines are no longer silently dropped).
 2. The service recomputes the total from catalog prices, rejects inactive
    products, clamps the discount to [0, total] and the paid amount to
    ≥ 0, and creates a `payments` row when paid > 0.
-3. Booking IDs: one per unit, claimed as a block from `daily_counters`
-   for today (plan §7.1).
+3. Booking IDs: one per line (not per kilo), claimed as a block from
+   `daily_counters` for today (plan §7.1). The weight is stored on the
+   booking.
 4. The sheet closes and the form resets.
 5. The **Booking created** dialog opens (§9.1) with the new booking
    ID(s). No toast.
@@ -814,7 +821,7 @@ business-time minute axis.
 
 **New booking**
 
-- [ ] Multiple lines and units create sequential per-unit IDs.
+- [ ] Multiple lines create sequential per-line IDs; a 3.2 kg line is one booking with one ID.
 - [ ] After a create, the Booking created dialog lists every new ID
       (single-ID and multi-ID layouts) with the customer and pickup.
 - [ ] The dialog stays open until Done or Back: no timer, and a backdrop

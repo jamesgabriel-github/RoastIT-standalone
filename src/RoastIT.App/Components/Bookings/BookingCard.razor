@@ -19,7 +19,7 @@
     @if (Columns.ShowsProductLine)
     {
         <div class="bcard-product">
-            @if (Columns.Product) { @Row.ProductName }
+            @if (Columns.Product) { @Row.ProductName <span class="muted">· @Weight.Format(Row.WeightGrams)</span> }
             @if (Columns.CookingTime) { <span class="muted">@(Columns.Product ? " · " : null)@DurationFormat.Format(Row.CookingTimeMin)</span> }
         </div>
     }

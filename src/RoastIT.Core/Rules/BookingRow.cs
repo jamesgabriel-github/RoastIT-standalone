@@ -21,7 +21,8 @@ public sealed record BookingRow(
     long TotalAmount,
     long DiscountAmount,
     long AmountPaid,
-    string? Notes)
+    string? Notes,
+    int WeightGrams = Weight.LegacyGrams)
 {
     /// <summary>1-based rank of this booking among the order's bookings sorted by ID (cancelled included).</summary>
     public int OrderPosition { get; init; } = 1;

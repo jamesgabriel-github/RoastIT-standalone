@@ -290,13 +290,14 @@ At startup, once: `PRAGMA journal_mode=WAL;`.
 | `amount_paid` | INTEGER | centavos; rollup of `payments`, updated in the same transaction |
 | `notes` | TEXT null | |
 
-**items** (one row per unit of product)
+**items** (one row per product line: one booking, however heavy — D34)
 
 | Column | Type | Notes |
 |---|---|---|
 | `booking_id` | TEXT PK | `YYMMDD-NNN` (§7.1) |
 | `order_key` | TEXT FK → orders | |
 | `product_id` | TEXT FK → products | no cascade delete |
+| `weight_g` | INTEGER | grams, 10 – 500,000 (0.01 – 500 kg); 3.2 kg = `3200`. Default 1000, which is what bookings made before D34 (one unit each) became |
 | `status` | INTEGER | `ItemStatus`; indexed |
 | `started_cooking_at` | TEXT (UTC) null | stamped on `pending → cooking` |
 
@@ -330,6 +331,7 @@ At startup, once: `PRAGMA journal_mode=WAL;`.
 | `InitialAppLock` | 1 | `app_lock`, `audit_logs`, `app_meta` |
 | `AddProductsCatalog` | 2 | `products` |
 | `AddBookingsDomain` | 3 | `orders`, `items`, `payments`, `daily_counters` (foreign-key indexes only) |
+| `AddItemWeight` | after 4 (D34) | `items.weight_g INTEGER NOT NULL DEFAULT 1000` (additive; no table rebuild) |
 | `AddPerformanceIndexes` | 4 | `orders(pickup_at)`, `items(status)`, `products(active)`, and covering `items(order_key, status, booking_id)` / `items(product_id, status)`, which replace the two foreign-key indexes on `items` (D21) |
 
 ```powershell
@@ -365,9 +367,10 @@ Rules:
 ### 7.1 Booking IDs
 
 - Format `YYMMDD-NNN`: business-local date + 3-digit daily sequence,
-  e.g. `261009-001`. **One ID per item**, not per order. An order of
-  3 × Lechon Belly + 1 × Lechon Chicken gets 4 IDs.
-- Claim a block of N numbers (N = total units in the new order) inside the
+  e.g. `261009-001`. **One ID per item (product line)**, not per order and
+  **not per kilo** (D34). An order of 3.2 kg Lechon Belly + 1.5 kg Lechon
+  Chicken gets 2 IDs.
+- Claim a block of N numbers (N = lines in the new order) inside the
   same transaction as the order/item insert:
   ```sql
   INSERT INTO daily_counters (date, last_seq) VALUES (@today, @n)
@@ -394,16 +397,21 @@ public static class OrderMath
   panel and detail sheet all use `NetTotal` / `Balance`. Nothing
   recomputes them on its own.
 - **Creating a booking** (`BookingService.CreateAsync`):
-  - Requires at least one line with a product and qty ≥ 1. Customer
-    name is optional; blank shows as "Walk-in customer".
-  - `total_amount` is **recomputed from current catalog prices** × qty.
-    Never trust a total sent from the form.
+  - Requires at least one line, and **every line needs a product and a
+    weight of 0.01 – 500 kg** (D34). A line without a valid weight is
+    refused with a message, not dropped. Customer name is optional; blank
+    shows as "Walk-in customer".
+  - `total_amount` is **recomputed from current catalog prices** (a
+    product's price is **per kilo**) × each line's weight, each line rounded
+    to the nearest centavo (`OrderMath.LineTotal`). Never trust a total sent
+    from the form.
   - **Reject inactive products**, even though the form only offers
     active ones.
   - Optional discount and "amount paid now" are both clamped to ≥ 0;
     the discount is also clamped to the total. A non-zero "paid now"
     also creates a `payments` row.
-  - One `Item` per unit, each `Pending`, each with its own booking ID.
+  - One `Item` per line, each `Pending`, each with its own booking ID and
+    its own `weight_g`. At most 100 lines in one order (Q27).
 - **Discount** (`OrderService.SetDiscountAsync`): flat ₱ amount, clamped
   to `[0, total_amount]`. 0 removes it.
 - **Record payment** (`OrderService.RecordPaymentAsync`): **additive**.
@@ -778,7 +786,8 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
   - Customer (optional, "Leave blank for a walk-in"), phone (optional)
     and pickup date & time.
   - **Item lines:** a swipeable row of product cards (active only), a
-    − / qty / + stepper, the subtotal, and Remove (Reset on the last
+    − / weight in kg / + stepper (the field takes decimals like 3.2; the
+    buttons move by 0.5 kg), the subtotal, and Remove (Reset on the last
     line). "+ Add another item" adds a line.
   - **Summary:** order total, discount, net total, amount paid now.
   - **Submit:** "Create booking · ₱{net}". A toast lists the created IDs.
@@ -1037,7 +1046,8 @@ with `Data Source=:memory:` kept open, or a temp file):
   dropping out of Balance due, and cancelled-only orders left out of
   revenue.
 - Create booking: total recomputed from the catalog, inactive product
-  rejected, one item per unit.
+  rejected, one item per line whatever its weight, line totals rounded
+  to the centavo, weights outside 0.01 – 500 kg refused (D34).
 - Status: forward-only, `expectedStatus` guard, `started_cooking_at`
   stamped.
 - Payments: additive, a `payments` row is written, and the call is
@@ -1258,7 +1268,7 @@ The output is `com.roastit.app-Signed.apk` under
 | Q24 | Bookings: **pickup validation** (bookings spec §14.4) | **Implemented: required** (blank shows "Choose a pickup date and time."), **default now + 5 hours** in business time **with the minutes set to 00** (11:42 → 4:00 PM; the picker always holds a value, so the blank message can't appear now) (the prototype used tomorrow 10:00; changed at the owner's request), **past pickups allowed**, and `CreateAsync` **enforces today ± 6 months** ("Pickup must be within 6 months of today.") whatever the picker allows | 2026-11-07 |
 | Q25 | Bookings: **"Latest first" in the grouped view** (bookings spec §14.5) | **Implemented as the spec describes:** the day groups reverse, bookings inside a day stay earliest-first. Alternative: reverse both | 2026-11-07 |
 | Q26 | Bookings: **sort ties** (bookings spec §14.6) | **Implemented: booking ID A → Z is the secondary key for every sort** (always ascending, even when the main sort is descending). Dashboard product-mix ties sort by product name A → Z (the catalog has no manual order) | 2026-11-07 |
-| Q27 | Bookings: **notes and input limits** (bookings spec §14.7) | **Notes: no field and no row in Phase 3** (the `orders.notes` column exists, stays empty, and the Phase 4 CSV can include it). **Limits, my addition:** customer ≤ 80, phone ≤ 30, **at most 100 bookings (units) in one order**, each with its own message in `BookingMessages`, so a mistyped quantity can't create thousands of rows | 2026-11-07 |
+| Q27 | Bookings: **notes and input limits** (bookings spec §14.7) | **Notes: no field and no row in Phase 3** (the `orders.notes` column exists, stays empty, and the Phase 4 CSV can include it). **Limits, my addition:** customer ≤ 80, phone ≤ 30, **at most 100 bookings (product lines) in one order**, each with its own message in `BookingMessages`. *(Since D34 a weight no longer creates rows, so this now caps lines; the weight has its own limit of 0.01 – 500 kg.)* | 2026-11-07 |
 | Q28 | Bookings: **audit rows for the discount and payment entered while creating a booking** | **Implemented: `discount.set` and `payment.recorded` rows (with `atCreation: true`)** are written in the create transaction, so every payment has a log row. Creating the booking itself writes no audit row. Setting a discount to the value it already has writes nothing | 2026-11-07 |
 | Q29 | Settings: **when does an export count** for "Last export" and the 7-day reminder (settings spec §10 #2)? Android can't tell whether the share target saved the file | **Implemented: once the file is made and the share sheet has opened.** If either fails, `lastExportAt` isn't touched. Alternative: only after the share sheet returns without cancel (not reliable on Android) | 2026-11-07 |
 | Q30 | Settings: **reminder threshold** (settings spec §10 #6) | **Implemented: more than 7 × 24 hours since the exact last-export time.** Alternative: calendar days | 2026-11-07 |
@@ -1268,6 +1278,7 @@ The output is `com.roastit.app-Signed.apk` under
 | Q34 | CSV: **column contents** the plan leaves open | **Implemented:** *Order* = the order's first booking ID; a blank customer is *Walk-in customer*; *Pickup date* `2026-11-08`, *Pickup time* `5:30 PM`, *Started cooking* `2026-11-08 1:05 PM` (all Manila); *Order discount* is the clamped discount; *Notes* is empty (no notes field yet, Q27) | 2026-11-07 |
 | Q35 | Import: **safety copies and a cut-off swap** | **Implemented:** the newest **3** `roastit.db3.bak-before-import-*` copies are kept. The swap writes a marker first; if the app dies before the marker is removed, the next start puts the safety copy back. That includes the rare case where the new file was already in place, so that import has to be done again | 2026-11-07 |
 | Q37 | Settings: **where export/import errors show.** The spec says an error toast, but toasts are hidden while a bottom sheet is open (shared-ui-spec) | **Implemented: an inline error line in the open sheet** (`role="alert"`), and the sheet stays open | 2026-11-07 |
+| Q38 | Weights (D34): the choices the owner didn't specify | **Implemented:** the product's price means **per kilo** (the form shows "₱2,200/kg"); a weight takes **up to 2 decimals** (0.01 kg steps) and must be **0.01 – 500 kg**; the − / + buttons move by **0.5 kg** (− stops at 0.5); the weight field starts **blank** and a blank or invalid one shows "Enter a weight between 0.01 and 500 kg for every item." instead of being dropped; each line's price is rounded to the nearest centavo; the weight can't be edited after booking (no edit feature exists for bookings); the Dashboard's counts (Product mix, kitchen load) still count **bookings, not kilos**; bookings made before D34 count as **1 kg** each. Alternative: price per piece with a separate kilo field, or a count of kilos on the Dashboard | 2026-11-07 |
 
 ### 15.2 Decision log
 
@@ -1306,6 +1317,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D31 | **Kitchen load chart uses a fixed day axis.** It always spans the whole selected date, 12 AM to 11:59 PM (business time), with an hourly tick (12 AM … 11 PM) every 40 px, so it is wider than the phone and **scrolls sideways**; the y-axis labels stay pinned. Bar parts outside the day are cut off, but their tooltips keep the real times. Today shows a dashed "now" line and opens centred on it; other dates open an hour before the first busy bar. Which items count is unchanged (Pending and Cooking only, late pending from now). *Replaces the old "earliest start … latest end" range with 3 or 5 ticks; the bookings prototype and spec §11 are updated to match* | 2026-11-07 | §7.6, bookings spec §11 |
 | D32 | **Bookings opens on today, and "all dates" means today ± 6 months** (owner's decision). `BookingScopeState` starts with today selected; tapping it again (or "All") shows all dates. "All dates" (the list, the status chips and the Dashboard) covers pickups from the start of today − 6 months to the end of today + 6 months, the same window the date strip and calendar allow. Older bookings stay in the database, in exports and in audit history, but the Bookings page doesn't show them. With ten years of generated data, the all-dates list read went from ≈540 ms to ≈90 ms on a desktop PC and no longer grows with history. *Was Q36; changes the Phase 3 default of "all dates = every booking", shown first* | 2026-11-07 | §7.4, §7.5, §7.6, bookings spec §2 |
 | D33 | **Export has a second button, "Save to a folder…"** (owner's request; Android). It opens the system "save as" screen so the owner chooses where on the phone the backup goes, and because the app writes the file itself it knows the save happened, so "Last export" is exact on this path. The share-sheet button stays as it was (Q29 still applies to it). Windows shows only the share button for now | 2026-11-07 | §10.5, settings spec §4.3 |
+| D34 | **A booking's quantity is a weight in kilos, not a number of bookings** (owner's request). One product line = one booking = one booking ID, with its weight in kilos on it (3.2 kg is one booking). The product's price is per kilo, so a line costs price × kilos. Stored as `items.weight_g` (whole grams). *(Replaces the Phase 3 rule "one item and one ID per unit": quantity 3 used to make 3 bookings.)* | 2026-11-07 | §6.2, §7.1, §7.2, §9, bookings spec §9 |
 
 ---
 

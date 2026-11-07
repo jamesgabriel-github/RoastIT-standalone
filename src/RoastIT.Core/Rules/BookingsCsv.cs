@@ -23,7 +23,7 @@ public static class BookingsCsv
 
     public static readonly IReadOnlyList<string> Header =
     [
-        "Booking ID", "Order", "Customer", "Phone", "Product", "Status", "Pickup date", "Pickup time", "Cooking time (min)",
+        "Booking ID", "Order", "Customer", "Phone", "Product", "Weight (kg)", "Status", "Pickup date", "Pickup time", "Cooking time (min)",
         "Started cooking", "Order total", "Order discount", "Order net total", "Order paid", "Order balance", "Notes",
     ];
 
@@ -67,6 +67,7 @@ public static class BookingsCsv
                 r.CustomerLabel,
                 r.Phone ?? "",
                 r.ProductName,
+                Weight.ToFieldText(r.WeightGrams),
                 ItemStatusRules.Label(r.Status),
                 pickup.ToString("yyyy-MM-dd", Inv),
                 pickup.ToString("h:mm tt", Inv),

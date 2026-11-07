@@ -106,7 +106,7 @@ public sealed class EfBookingStore(IDbContextFactory<RoastItDbContext> dbFactory
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var count = draft.UnitProductIds.Count;
+        var count = draft.Items.Count;
         var date = draft.BookingDate.ToString("yyyy-MM-dd");
 
         // Claim count numbers at once; RETURNING gives the last one of the block (plan §7.1). The counter row changes in this
@@ -119,11 +119,12 @@ public sealed class EfBookingStore(IDbContextFactory<RoastItDbContext> dbFactory
 
         var ids = BookingIdFormat.Block(draft.BookingDate, lastSeq, count);
         var order = draft.Order;
-        order.Items = draft.UnitProductIds.Select((productId, i) => new Item
+        order.Items = draft.Items.Select((item, i) => new Item
         {
             BookingId = ids[i],
             OrderKey = order.Key,
-            ProductId = productId,
+            ProductId = item.ProductId,
+            WeightGrams = item.WeightGrams,
             Status = ItemStatus.Pending,
         }).ToList();
 
@@ -165,5 +166,6 @@ public sealed class EfBookingStore(IDbContextFactory<RoastItDbContext> dbFactory
             i.Order.TotalAmount,
             i.Order.DiscountAmount,
             i.Order.AmountPaid,
-            i.Order.Notes));
+            i.Order.Notes,
+            i.WeightGrams));
 }

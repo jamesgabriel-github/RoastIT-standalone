@@ -147,6 +147,12 @@ namespace RoastIT.Data.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("status");
 
+                    b.Property<int>("WeightGrams")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1000)
+                        .HasColumnName("weight_g");
+
                     b.HasKey("BookingId");
 
                     b.HasIndex("Status")

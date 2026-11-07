@@ -19,8 +19,8 @@ public sealed class CsvBackupTests : BookingsTestBase
 
     private static BookingRow Row(string id, Guid order, DateTime pickup, string? customer = "Grace Villanueva", ItemStatus status = ItemStatus.Pending,
         long total = 440000, long discount = 0, long paid = 0, string product = "Lechon Belly", string? phone = null, string? notes = null,
-        DateTime? started = null) =>
-        new(id, order, status, started, Guid.Empty, product, 240, customer, phone, pickup, total, discount, paid, notes);
+        DateTime? started = null, int weightGrams = 1000) =>
+        new(id, order, status, started, Guid.Empty, product, 240, customer, phone, pickup, total, discount, paid, notes, weightGrams);
 
     private string Text() => Encoding.UTF8.GetString(_files.Last!);
 
@@ -33,7 +33,7 @@ public sealed class CsvBackupTests : BookingsTestBase
 
         Assert.StartsWith("﻿", text);
         Assert.Equal(
-            "﻿Booking ID,Order,Customer,Phone,Product,Status,Pickup date,Pickup time,Cooking time (min),Started cooking," +
+            "﻿Booking ID,Order,Customer,Phone,Product,Weight (kg),Status,Pickup date,Pickup time,Cooking time (min),Started cooking," +
             "Order total,Order discount,Order net total,Order paid,Order balance,Notes\r\n",
             text);
         var bytes = Encoding.UTF8.GetBytes(text);
@@ -48,14 +48,14 @@ public sealed class CsvBackupTests : BookingsTestBase
         var rows = BookingRows.WithOrderInfo(
         [
             Row("261107-002", order, pickup, total: 880000, discount: 50000, paid: 300050, phone: "0917 123 4567",
-                status: ItemStatus.Cooking, started: Local(2026, 11, 8, 13, 5)),
+                status: ItemStatus.Cooking, started: Local(2026, 11, 8, 13, 5), weightGrams: 3200),
             Row("261107-001", order, pickup, total: 880000, discount: 50000, paid: 300050, phone: "0917 123 4567"),
         ]);
 
         var lines = BookingsCsv.Build(rows, Calendar).Split("\r\n");
 
-        Assert.Equal("261107-001,261107-001,Grace Villanueva,0917 123 4567,Lechon Belly,Pending,2026-11-08,5:30 PM,240,,8800.00,500.00,8300.00,3000.50,5299.50,", lines[1]);
-        Assert.Equal("261107-002,261107-001,Grace Villanueva,0917 123 4567,Lechon Belly,Cooking,2026-11-08,5:30 PM,240,2026-11-08 1:05 PM,8800.00,500.00,8300.00,3000.50,5299.50,", lines[2]);
+        Assert.Equal("261107-001,261107-001,Grace Villanueva,0917 123 4567,Lechon Belly,1,Pending,2026-11-08,5:30 PM,240,,8800.00,500.00,8300.00,3000.50,5299.50,", lines[1]);
+        Assert.Equal("261107-002,261107-001,Grace Villanueva,0917 123 4567,Lechon Belly,3.2,Cooking,2026-11-08,5:30 PM,240,2026-11-08 1:05 PM,8800.00,500.00,8300.00,3000.50,5299.50,", lines[2]);
         Assert.Equal("", lines[3]); // the file ends with CRLF
     }
 
@@ -82,7 +82,7 @@ public sealed class CsvBackupTests : BookingsTestBase
 
         var line = BookingsCsv.Build(rows, Calendar).Split("\r\n")[1];
 
-        Assert.Equal("261107-001,261107-001,Walk-in customer,,Lechon Belly,Cancelled,2026-11-08,10:00 AM,240,,4400.00,0.00,4400.00,1000.00,0.00,", line);
+        Assert.Equal("261107-001,261107-001,Walk-in customer,,Lechon Belly,1,Cancelled,2026-11-08,10:00 AM,240,,4400.00,0.00,4400.00,1000.00,0.00,", line);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public sealed class CsvBackupTests : BookingsTestBase
         await CreateFullAsync("Just outside before", now.AddHours(-24).AddMinutes(-1), 0, 0, (lechon, 1));
         await CreateFullAsync("Edge after", now.AddHours(24), 0, 0, (lechon, 1));
         await CreateFullAsync("Just outside after", now.AddHours(24).AddMinutes(1), 0, 0, (lechon, 1));
-        await CreateFullAsync("Now", now, 0, 0, (lechon, 2));
+        await CreateFullAsync("Now", now, 0, 0, (lechon, 1), (lechon, 2.5));
 
         Assert.True(await _csv.SaveAsync());
 

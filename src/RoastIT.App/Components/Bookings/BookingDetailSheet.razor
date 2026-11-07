@@ -28,6 +28,7 @@
             <section class="card">
                 <p class="dsec-title">Booking</p>
                 <div class="drow"><span class="k">Product</span><span class="v">@item.ProductName</span></div>
+                <div class="drow"><span class="k">Weight</span><span class="v">@Weight.Format(item.WeightGrams)</span></div>
                 <div class="drow"><span class="k">Cooking time</span><span class="v">@DurationFormat.Format(item.CookingTimeMin)</span></div>
                 <div class="drow"><span class="k">Pickup</span><span class="v">@BookingFormat.DateTimeShort(Calendar.ToLocal(item.PickupAt))</span></div>
             </section>

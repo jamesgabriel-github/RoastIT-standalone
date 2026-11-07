@@ -73,7 +73,9 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 ## Rules quick reference (details in the plan)
 
 **Booking IDs**
-- Format `YYMMDD-NNN`, one ID per item (unit), not per order.
+- Format `YYMMDD-NNN`, one ID per item (product line), not per order and not per kilo.
+- An item's quantity is a **weight in kilos** (`items.weight_g`, whole grams, 0.01 – 500 kg); a product's
+  price is per kilo (D34). Use `OrderMath.LineTotal` and the `Weight` helpers.
 - IDs come from `daily_counters`, claimed as a block in the same transaction
   as the order insert. A rollback leaves a gap, never a duplicate.
 

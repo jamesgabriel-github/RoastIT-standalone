@@ -33,7 +33,7 @@ public sealed class BackupTests : IDisposable
     private async Task<string> ExportAAsync()
     {
         var lechon = await _a.AddProductAsync("Lechon Belly");
-        await _a.BookAsync(lechon, "Diego Santos", qty: 2, paid: 100000);
+        await _a.BookAsync(lechon, "Diego Santos", bookings: 2, paid: 100000);
         await _a.BookAsync(lechon, "Grace Villanueva");
         var exported = await _a.Backups.ExportAsync(await _a.DataPinAsync(), _out);
         return exported.Path;
@@ -45,7 +45,7 @@ public sealed class BackupTests : IDisposable
     public async Task Export_names_the_file_by_business_time_and_contains_the_data()
     {
         var lechon = await _a.AddProductAsync("Lechon Belly");
-        await _a.BookAsync(lechon, "Diego Santos", qty: 2, paid: 100000);
+        await _a.BookAsync(lechon, "Diego Santos", bookings: 2, paid: 100000);
 
         var exported = await _a.Backups.ExportAsync(await _a.DataPinAsync(), _out);
 
@@ -267,7 +267,7 @@ public sealed class BackupTests : IDisposable
         await _b.Backups.ImportAsync(path, "a.roastline", await _b.DataPinAsync());
         var product = (await _b.Bookings.ListAsync())[0].ProductId;
         var created = await _b.Bookings.CreateAsync(new NewBookingInput(
-            "Next", null, _b.Calendar.ToUtc(new DateTime(2026, 11, 8, 12, 0, 0)), [new NewBookingLine(product, 1)]));
+            "Next", null, _b.Calendar.ToUtc(new DateTime(2026, 11, 8, 12, 0, 0)), [new NewBookingLine(product, 1000)]));
 
         Assert.Equal("261107-004", created.Units[0].BookingId);
     }
@@ -391,7 +391,7 @@ public sealed class BackupTests : IDisposable
     {
         Assert.Equal(0, await _b.Backups.CountBookingsOnDeviceAsync());
         var crispy = await _b.AddProductAsync("Crispy Pata");
-        await _b.BookAsync(crispy, "One", qty: 2);
+        await _b.BookAsync(crispy, "One", bookings: 2);
         Sql.Exec(_b.DbPath, "UPDATE items SET status = 4;");
 
         Assert.Equal(2, await _b.Backups.CountBookingsOnDeviceAsync());

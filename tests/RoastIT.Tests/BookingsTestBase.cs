@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using RoastIT.Core.Abstractions;
 using RoastIT.Core.Entities;
 using RoastIT.Core.Enums;
+using RoastIT.Core.Rules;
 using RoastIT.Core.Services;
 using RoastIT.Data.Repositories;
 
@@ -64,15 +65,17 @@ public abstract class BookingsTestBase : IDisposable
     /// <summary>Tomorrow (Nov 8) at 10:00 Manila.</summary>
     protected DateTime Tomorrow10 => Local(2026, 11, 8);
 
-    /// <summary>Grace Villanueva, tomorrow 10:00, no discount, nothing paid.</summary>
-    protected Task<CreatedBooking> CreateAsync(params (Product Product, int Qty)[] lines) =>
+    /// <summary>Grace Villanueva, tomorrow 10:00, no discount, nothing paid. Each line is ONE booking of that many kilos (D34).</summary>
+    protected Task<CreatedBooking> CreateAsync(params (Product Product, double Kilos)[] lines) =>
         CreateFullAsync("Grace Villanueva", null, 0, 0, lines);
 
     protected Task<CreatedBooking> CreateFullAsync(
-        string? customer, DateTime? pickup, long discount, long paid, params (Product Product, int Qty)[] lines) =>
+        string? customer, DateTime? pickup, long discount, long paid, params (Product Product, double Kilos)[] lines) =>
         Bookings.CreateAsync(new NewBookingInput(
             customer, null, pickup ?? Tomorrow10,
-            lines.Select(l => new NewBookingLine(l.Product.Id, l.Qty)).ToList(), discount, paid));
+            lines.Select(l => new NewBookingLine(l.Product.Id, Grams(l.Kilos))).ToList(), discount, paid));
+
+    protected static int Grams(double kilos) => (int)Math.Round(kilos * Weight.GramsPerKilo);
 
     protected async Task<PinConfirmation> BookingsPinAsync()
     {

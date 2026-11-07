@@ -14,28 +14,73 @@ public class BookingServiceTests : BookingsTestBase
     // ---- Creating a booking ----------------------------------------------------
 
     [Fact]
-    public async Task Create_makes_one_item_per_unit_with_sequential_ids_for_today()
+    public async Task Create_makes_one_item_per_line_with_sequential_ids_for_today()
     {
         var belly = await AddProductAsync("Lechon Belly", 220000, 120);
         var chicken = await AddProductAsync("Lechon Chicken", 75000, 30);
 
-        var created = await CreateAsync((belly, 3), (chicken, 1));
+        var created = await CreateAsync((belly, 3), (chicken, 1), (belly, 2));
 
-        Assert.Equal(["261107-001", "261107-002", "261107-003", "261107-004"], created.Units.Select(u => u.BookingId));
-        Assert.Equal(["Lechon Belly", "Lechon Belly", "Lechon Belly", "Lechon Chicken"], created.Units.Select(u => u.ProductName));
+        Assert.Equal(["261107-001", "261107-002", "261107-003"], created.Units.Select(u => u.BookingId));
+        Assert.Equal(["Lechon Belly", "Lechon Chicken", "Lechon Belly"], created.Units.Select(u => u.ProductName));
+        Assert.Equal([3000, 1000, 2000], created.Units.Select(u => u.WeightGrams));
 
         var order = await LoadOrderAsync(created.OrderKey);
-        Assert.Equal(4, order.Items.Count);
+        Assert.Equal(3, order.Items.Count);
         Assert.All(order.Items, i => Assert.Equal(ItemStatus.Pending, i.Status));
         Assert.All(order.Items, i => Assert.Null(i.StartedCookingAt));
-        Assert.Equal(3 * 220000 + 75000, order.TotalAmount);
+        Assert.Equal(3 * 220000 + 75000 + 2 * 220000, order.TotalAmount);
+    }
+
+    [Fact]
+    public async Task A_weight_is_one_booking_however_heavy_it_is()
+    {
+        var belly = await AddProductAsync("Lechon Belly", 220000, 120);
+
+        var created = await CreateAsync((belly, 3.2));
+
+        var unit = Assert.Single(created.Units);
+        Assert.Equal("261107-001", unit.BookingId);
+        Assert.Equal(3200, unit.WeightGrams);
+        var order = await LoadOrderAsync(created.OrderKey);
+        Assert.Equal(3200, Assert.Single(order.Items).WeightGrams);
+        Assert.Equal(704000, order.TotalAmount); // ₱2,200 a kilo × 3.2 kg = ₱7,040
+        Assert.Equal(704000, created.NetTotal);
+    }
+
+    [Fact]
+    public async Task Line_totals_round_to_the_nearest_centavo()
+    {
+        var p = await AddProductAsync("Odd price", 33333);
+
+        var created = await CreateAsync((p, 0.01), (p, 2.55));
+
+        // ₱333.33 × 0.01 kg = 333.33 centavos → 333; ₱333.33 × 2.55 kg = 84,999.15 centavos → 84,999.
+        Assert.Equal(333 + 84999,(await LoadOrderAsync(created.OrderKey)).TotalAmount);
+    }
+
+    [Fact]
+    public async Task Weights_outside_0_01_to_500_kg_are_refused_and_nothing_is_saved()
+    {
+        var p = await AddProductAsync("Liempo", 65000);
+
+        foreach (var kilos in new[] { 0.0, -1, 0.005, 500.01, 3200 })
+        {
+            var ex = await Assert.ThrowsAsync<ValidationException>(() => CreateAsync((p, 1), (p, kilos)));
+            Assert.Equal(BookingMessages.WeightInvalid, ex.Message);
+        }
+        await CreateAsync((p, 0.01), (p, 500)); // both ends are allowed
+
+        await using var db = Fx.Factory.CreateDbContext();
+        Assert.Equal(1, await db.Orders.CountAsync());
+        Assert.Equal(2, await db.Items.CountAsync());
     }
 
     [Fact]
     public async Task Create_numbers_continue_across_orders_on_the_same_day()
     {
         var p = await AddProductAsync("Liempo", 65000);
-        var first = await CreateAsync((p, 2));
+        var first = await CreateAsync((p, 2), (p, 1));
         var second = await CreateAsync((p, 1));
 
         Assert.Equal(["261107-001", "261107-002"], first.Units.Select(u => u.BookingId));
@@ -68,7 +113,7 @@ public class BookingServiceTests : BookingsTestBase
         // A unit pointing at a product that doesn't exist fails the foreign key at save time, after the IDs were claimed.
         var bad = new Order { Key = Guid.NewGuid(), OrderDate = Today, PickupAt = Tomorrow10, TotalAmount = 100 };
         await Assert.ThrowsAnyAsync<Exception>(() =>
-            Store.AddOrderAsync(new NewOrderDraft(bad, [p.Id, Guid.NewGuid()], Today, [])));
+            Store.AddOrderAsync(new NewOrderDraft(bad, [new NewItemDraft(p.Id, 1000), new NewItemDraft(Guid.NewGuid(), 1000)], Today, [])));
 
         var next = await CreateAsync((p, 1));
 
@@ -121,37 +166,39 @@ public class BookingServiceTests : BookingsTestBase
     }
 
     [Fact]
-    public async Task At_least_one_line_with_quantity_one_or_more_is_required()
+    public async Task At_least_one_line_is_required()
     {
-        var p = await AddProductAsync("Liempo", 65000);
+        await AddProductAsync("Liempo", 65000);
 
-        await Assert.ThrowsAsync<ValidationException>(() => Bookings.CreateAsync(new NewBookingInput(null, null, Tomorrow10, [], 0, 0)));
-        var ex = await Assert.ThrowsAsync<ValidationException>(() => CreateAsync((p, 0)));
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Bookings.CreateAsync(new NewBookingInput(null, null, Tomorrow10, [], 0, 0)));
         Assert.Equal(BookingMessages.NoItems, ex.Message);
     }
 
     [Fact]
-    public async Task Lines_with_quantity_below_one_are_dropped_but_the_rest_is_booked()
+    public async Task A_line_without_a_weight_is_refused_not_dropped()
     {
         var a = await AddProductAsync("Liempo", 65000);
         var b = await AddProductAsync("Head", 120000);
 
-        var created = await CreateAsync((a, 0), (b, 2));
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => CreateAsync((a, 0), (b, 2)));
 
-        Assert.Equal(2, created.Units.Count);
-        Assert.All(created.Units, u => Assert.Equal("Head", u.ProductName));
+        Assert.Equal(BookingMessages.WeightInvalid, ex.Message);
+        await using var db = Fx.Factory.CreateDbContext();
+        Assert.Equal(0, await db.Orders.CountAsync());
     }
 
     [Fact]
-    public async Task An_order_is_capped_at_100_bookings()
+    public async Task An_order_is_capped_at_100_bookings_and_weight_does_not_count_toward_it()
     {
         var p = await AddProductAsync("Liempo", 65000);
 
-        await Assert.ThrowsAsync<ValidationException>(() => CreateAsync((p, 101)));
-        await Assert.ThrowsAsync<ValidationException>(() => CreateAsync((p, 60), (p, 41)));
-        var ok = await CreateAsync((p, 100));
+        await Assert.ThrowsAsync<ValidationException>(() => CreateAsync(Enumerable.Repeat((p, 1.0), 101).ToArray()));
+        var ok = await CreateAsync(Enumerable.Repeat((p, 1.0), 100).ToArray());
         Assert.Equal(100, ok.Units.Count);
         Assert.Equal("261107-100", ok.Units[^1].BookingId);
+
+        var heavy = await CreateAsync((p, 500)); // 500 kg is still one booking
+        Assert.Single(heavy.Units);
     }
 
     [Fact]
@@ -190,8 +237,8 @@ public class BookingServiceTests : BookingsTestBase
     {
         var p = await AddProductAsync("Liempo", 65000);
 
-        var walkIn = await Bookings.CreateAsync(new NewBookingInput("   ", " 0917 000 0000 ", Tomorrow10, [new(p.Id, 1)]));
-        var named = await Bookings.CreateAsync(new NewBookingInput("  Anna Reyes ", null, Tomorrow10, [new(p.Id, 1)]));
+        var walkIn = await Bookings.CreateAsync(new NewBookingInput("   ", " 0917 000 0000 ", Tomorrow10, [new(p.Id, 1000)]));
+        var named = await Bookings.CreateAsync(new NewBookingInput("  Anna Reyes ", null, Tomorrow10, [new(p.Id, 1000)]));
 
         var a = await LoadOrderAsync(walkIn.OrderKey);
         Assert.Null(a.Customer);
@@ -323,7 +370,7 @@ public class BookingServiceTests : BookingsTestBase
         var belly = await AddProductAsync("Lechon Belly", 220000);
         var liempo = await AddProductAsync("Liempo", 65000);
         var single = await CreateAsync((liempo, 1));                  // 001
-        var multi = await CreateAsync((belly, 2), (liempo, 1));       // 002, 003, 004
+        var multi = await CreateAsync((belly, 2), (belly, 2.5), (liempo, 1)); // 002, 003, 004
         await SetStatusAsync("261107-003", ItemStatus.Cancelled);
 
         var rows = await Bookings.ListAsync();
