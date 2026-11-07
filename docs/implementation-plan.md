@@ -765,7 +765,7 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
 
 **Bookings**
 - **Date strip:** an "All" chip, then a swipeable 10-day window (starting
-  2 days before today) with prev/next-week ends and count badges, then a
+  2 days before today) with prev/next-week ends and a small orange dot on days that have bookings (D36), then a
   calendar button.
   - The calendar bottom sheet has month navigation, "Today" and "Clear
     date", and a caption with the scheduling window.
@@ -1335,6 +1335,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D33 | **Export has a second button, "Save to a folder…"** (owner's request; Android). It opens the system "save as" screen so the owner chooses where on the phone the backup goes, and because the app writes the file itself it knows the save happened, so "Last export" is exact on this path. The share-sheet button stays as it was (Q29 still applies to it). Windows shows only the share button for now | 2026-11-07 | §10.5, settings spec §4.3 |
 | D34 | **A booking's quantity is a weight in kilos, not a number of bookings** (owner's request). One product line = one booking = one booking ID, with its weight in kilos on it (3.2 kg is one booking). The product's price is per kilo, so a line costs price × kilos. Stored as `items.weight_g` (whole grams). *(Replaces the Phase 3 rule "one item and one ID per unit": quantity 3 used to make 3 bookings.)* | 2026-11-07 | §6.2, §7.1, §7.2, §9, bookings spec §9 |
 | D35 | **A booking's pickup time can be changed** (owner's request). The pickup lives on the order, so one change moves every booking in it; booking IDs don't change (they come from the order date). Needs a **Bookings PIN confirmation (3-minute window)**. Allowed while the order is not cancelled and has no Cooked or Completed item (the same test as cancelling); a Cooking item is fine and keeps its `started_cooking_at`. The new time must be inside the D32 window; a time already past is allowed (the picker warns). Audited as `order.pickup_changed`. Raises `OrderChanged` and `BookingsChanged` for the old and the new date. *(Adds to D7.)* | 2026-11-07 | §7.3, §9.5, bookings spec §8, §12 |
+| D36 | **The date strip marks days with bookings with an orange dot, not a count** (owner's request), the same dot the calendar sheet already uses: 5 px, accent, at the bottom of the tile (white on the selected tile), hidden when the day has no bookings. The tile's accessible label still carries the count (*..., 3 bookings*). *(Replaces the count badge in the Phase 3 date strip.)* | 2026-11-08 | §9.5, bookings spec §3 |
 
 ---
 

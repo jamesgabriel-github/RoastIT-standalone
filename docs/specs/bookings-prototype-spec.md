@@ -8,7 +8,7 @@ Dashboard, booking detail and new booking.
 | Route | `/bookings` (default after unlock) |
 | Layout | `MainLayout`, nav item **Bookings** active |
 | Services | `BookingService`, `OrderService`, `DashboardService`, `IBusinessCalendar`, `IChangeNotifier`, `PinPromptService` |
-| Rules | Plan §7.1–§7.6, §9.5; decisions D7, D8, D11, D22, D23 |
+| Rules | Plan §7.1–§7.6, §9.5; decisions D7, D8, D11, D22, D23, D36 |
 | Shared UI | `shared-ui-spec.md` |
 | Older behavior notes | `bookings-page-spec.md` (ignore its desktop layout) |
 | Build phase | Phase 3 (columns and list-view preference wired in Phase 4) |
@@ -83,7 +83,7 @@ button.
 | Day tile | 46 × 56, radius 12, 1.5 px border, `--surface`. Weekday (10 px, uppercase, 75% opacity) over day number (mono 16 px bold) |
 | Today tile | Accent border |
 | Selected tile | Accent fill, white text |
-| Count badge | Top-right, offset −6/−5 px, 16 px pill, accent, 9.5 px bold: number of bookings (items, any status) with pickup on that day. Inverted on the selected tile. Hidden when 0 |
+| Booking dot (D36) | 5 px round accent dot, centered, 4 px above the bottom edge. Shown when the day has any booking (items, any status) with pickup on that day; white on the selected tile; hidden when there are none. No count is shown (it stays in the tile's label) |
 | Calendar button | 48 px wide, radius 12, `--surface-2`, 20 px calendar icon. Accent border and icon when a date is selected. Label *Pick a date* |
 
 **Behavior**
@@ -683,7 +683,7 @@ business-time minute axis.
 | Discount remaining balance | `OrderService.WriteOffBalanceAsync` | Bookings (3 min) | `order.balance_waived` | `OrderChanged` |
 | Cancel order / booking | `OrderService.CancelOrderAsync` | Bookings (3 min) | `order.cancelled` | `OrderChanged`, `BookingsChanged` |
 | Change pickup time | `OrderService.SetPickupAsync` | Bookings (3 min) | `order.pickup_changed` | `OrderChanged`, `BookingsChanged` (old and new date) |
-| List, counts, strip badges, calendar dots | Booking queries | — | — | — |
+| List, counts, strip and calendar dots | Booking queries | — | — | — |
 | Dashboard | `DashboardService` | — | — | — |
 
 - Every write starts with `EnsureUnlocked()`.
@@ -789,7 +789,7 @@ business-time minute axis.
 
 **Date strip**
 
-- [ ] Starts 2 days before today and shows badges.
+- [ ] Starts 2 days before today and marks days with bookings with an orange dot (no count).
 - [ ] Arrows stop at ±6 months.
 - [ ] Tapping the selected day clears it.
 - [ ] A calendar pick outside the strip moves the strip.
@@ -828,7 +828,7 @@ business-time minute axis.
       it changes while the prompt is open).
 - [ ] *Edit* next to Pickup shows only while the order can still be cancelled (nothing cooked or completed); saving asks for the
       PIN (not again within 3 minutes), moves every booking in the order and keeps the IDs; an unchanged time asks for nothing;
-      the list, strip badges and Dashboard follow the new date.
+      the list, strip dots and Dashboard follow the new date.
 
 **New booking**
 

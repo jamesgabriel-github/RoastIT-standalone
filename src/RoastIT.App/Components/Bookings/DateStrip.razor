@@ -24,7 +24,7 @@
                 <span class="day-num">@day.Day</span>
                 @if (count > 0)
                 {
-                    <span class="day-badge">@count</span>
+                    <span class="day-dot" aria-hidden="true"></span>
                 }
             </button>
         }
@@ -43,7 +43,7 @@
 
     [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
 
-    /// <summary>Bookings per pickup date (any status), for the badges.</summary>
+    /// <summary>Bookings per pickup date (any status); a dot marks dates that have any.</summary>
     [Parameter] public IReadOnlyDictionary<DateOnly, int> Counts { get; set; } = new Dictionary<DateOnly, int>();
 
     [Parameter] public EventCallback OnOpenCalendar { get; set; }
