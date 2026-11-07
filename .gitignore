@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # EF design-time scratch database
 roastit-design.db3*
+
+# Signing keys must never be committed (plan §14)
+*.keystore
+*.jks
