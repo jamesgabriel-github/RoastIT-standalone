@@ -8,7 +8,7 @@ Last updated: 2026-11-07 (Phase 2 built). Read this first in a new session, then
 | Phase | State | Notes |
 |---|---|---|
 | 0 — Foundation | **Done.** Checkpoint passed in Visual Studio | Layout, theme, shared components, fonts, DB startup, logging |
-| 1 — App lock | **Built. Code and tests done; device checkpoint not yet run** | See "Phase 1 device checkpoint" below |
+| 1 — App lock | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07) | Checklist kept below for reference |
 | 2 — Menu | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported | Committed as `6657006`. Checklist kept below for reference |
 | 3 — Bookings | Not started — **next** | `AddBookingsDomain` migration, `IBusinessCalendar`, `OrderMath`, booking services, Bookings page |
 | 4 — Settings, backup, hardening | Not started | Settings has Security + Appearance only so far |
@@ -121,7 +121,7 @@ csproj. Any new App service worth testing must be free of MAUI types and added t
 - Android Back from Menu/Settings leaves the app instead of returning to Bookings (not specified
   in the plan; left as is — ask the user if they want it changed).
 
-## Phase 1 device checkpoint (to run in Visual Studio, Android)
+## Phase 1 device checkpoint (run by the user, Android)
 
 Fresh install (or Clear storage):
 1. First run shows "Set up your PIN" → confirm → recovery code (Continue disabled until ticked); a
@@ -134,7 +134,7 @@ Fresh install (or Clear storage):
 7. Back on Unlock sends the app to the background; on the recovery-code view it does nothing.
 8. Everything renders correctly in dark mode.
 
-The in-app `PinPrompt` was exercised by the Phase 2 checkpoint. The Phase 1 checklist itself has not been confirmed as run.
+The in-app `PinPrompt` was exercised by the Phase 2 checkpoint.
 
 ## Phase 2 device checkpoint (run by the user; plan §13 Phase 2)
 
