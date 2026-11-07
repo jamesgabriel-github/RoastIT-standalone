@@ -102,7 +102,7 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 | Action | When the PIN is asked |
 |---|---|
 | Menu add / edit / activate / deactivate | Every time (single-use confirmation) |
-| Settings Export / Import | Every time |
+| Settings Export / Import | Every time (`PinScope.Data`, single-use) |
 | Bookings record payment, "Discount remaining balance", cancel order | Remembered for **3 minutes**; the window is cleared on lock |
 | Create booking, manual discount, advance status | Not asked |
 
@@ -138,6 +138,7 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 | `bookingListView` | `detailed` / `compact` |
 | `lastExportAt` | ISO timestamp |
 | `lastCsvAt` | ISO timestamp |
+| `lastCsvCount` | bookings in the last CSV save |
 | `csvUri` | MediaStore URI of the CSV file |
 
 Security data never goes in Preferences.
@@ -157,5 +158,7 @@ Security data never goes in Preferences.
   light and dark mode.
 - **Plain CSS** ported from the prototypes into `wwwroot/css/app.css`. No CSS
   framework.
-- **Indexes and performance** are deferred to Phase 4 (D21). Don't add
-  indexes early unless a test shows a problem.
+- **Indexes and performance (D21)** were done in Phase 4. The Bookings page
+  reads only its scope: one day's rows, SQL counts, SQL Dashboard totals.
+  To time a change against ten years of data, run
+  `$env:ROASTIT_PERF = "1"; dotnet test tests\RoastIT.Tests --filter "FullyQualifiedName~TenYearData" --logger "console;verbosity=detailed"`.

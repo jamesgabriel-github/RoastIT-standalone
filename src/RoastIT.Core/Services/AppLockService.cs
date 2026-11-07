@@ -15,6 +15,7 @@ public sealed class AppLockService(IAppLockStore store, IClock clock) : IAppLock
 {
     public const int MaxFailedAttempts = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromSeconds(30);
+    /// <summary>How long a single-use (Menu or Data) confirmation stays usable.</summary>
     public static readonly TimeSpan MenuConfirmationLifetime = TimeSpan.FromSeconds(60);
     public static readonly TimeSpan BookingsWindow = TimeSpan.FromMinutes(3);
 
@@ -24,7 +25,8 @@ public sealed class AppLockService(IAppLockStore store, IClock clock) : IAppLock
     private readonly SemaphoreSlim _gate = new(1, 1);   // serialises read-modify-write of the attempt counter
     private readonly object _state = new();             // guards the in-memory fields below
     private bool _locked = true;                        // the app always starts locked
-    private readonly Dictionary<Guid, DateTime> _menuConfirmations = [];
+    // Unused single-use confirmations (Menu and Data scopes): id → (scope, issued at).
+    private readonly Dictionary<Guid, (PinScope Scope, DateTime IssuedAt)> _singleUse = [];
     private DateTime? _bookingsWindowUntil;
 
     public event Action? LockStateChanged;
@@ -156,10 +158,10 @@ public sealed class AppLockService(IAppLockStore store, IClock clock) : IAppLock
             var confirmation = new PinConfirmation(Guid.NewGuid(), scope, now);
             lock (_state)
             {
-                if (scope == PinScope.Menu)
+                if (scope != PinScope.Bookings)
                 {
-                    PruneExpiredMenuConfirmations(now);
-                    _menuConfirmations[confirmation.Id] = now;
+                    PruneExpiredSingleUse(now);
+                    _singleUse[confirmation.Id] = (scope, now);
                 }
                 else if (_bookingsWindowUntil is not { } until || until <= now)
                 {
@@ -190,13 +192,14 @@ public sealed class AppLockService(IAppLockStore store, IClock clock) : IAppLock
             return;
         }
 
-        // Menu: present, for Menu, unexpired, and not used before (consumed here).
-        if (confirmation is null || confirmation.Scope != PinScope.Menu) throw new PinRequiredException();
+        // Menu and Data: present, for this scope, unexpired, and not used before (consumed here).
+        if (confirmation is null || confirmation.Scope != scope) throw new PinRequiredException();
         lock (_state)
         {
             var now = clock.UtcNow;
-            if (!_menuConfirmations.Remove(confirmation.Id, out var issuedAt)
-                || now - issuedAt > MenuConfirmationLifetime)
+            if (!_singleUse.Remove(confirmation.Id, out var issued)
+                || issued.Scope != scope
+                || now - issued.IssuedAt > MenuConfirmationLifetime)
             {
                 throw new PinRequiredException();
             }
@@ -262,16 +265,16 @@ public sealed class AppLockService(IAppLockStore store, IClock clock) : IAppLock
             _locked = locked;
             if (locked)
             {
-                _menuConfirmations.Clear();
+                _singleUse.Clear();
                 _bookingsWindowUntil = null;
             }
         }
         if (changed) LockStateChanged?.Invoke();
     }
 
-    private void PruneExpiredMenuConfirmations(DateTime now)
+    private void PruneExpiredSingleUse(DateTime now)
     {
-        foreach (var id in _menuConfirmations.Where(kv => now - kv.Value > MenuConfirmationLifetime).Select(kv => kv.Key).ToList())
-            _menuConfirmations.Remove(id);
+        foreach (var id in _singleUse.Where(kv => now - kv.Value.IssuedAt > MenuConfirmationLifetime).Select(kv => kv.Key).ToList())
+            _singleUse.Remove(id);
     }
 }

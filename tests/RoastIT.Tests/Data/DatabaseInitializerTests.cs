@@ -40,7 +40,7 @@ public class DatabaseInitializerTests
         await init.InitializeAsync("1.2.3", previousVersion: null);
 
         Assert.Equal("roastline", ScalarText(temp.DbPath, "SELECT value FROM app_meta WHERE key = 'app_id';"));
-        Assert.Equal("3", ScalarText(temp.DbPath, "SELECT value FROM app_meta WHERE key = 'schema_version';")); // migrations applied so far: InitialAppLock, AddProductsCatalog, AddBookingsDomain
+        Assert.Equal("4", ScalarText(temp.DbPath, "SELECT value FROM app_meta WHERE key = 'schema_version';")); // InitialAppLock, AddProductsCatalog, AddBookingsDomain, AddPerformanceIndexes
         Assert.Equal("1.2.3", ScalarText(temp.DbPath, "SELECT value FROM app_meta WHERE key = 'app_version';"));
         Assert.Equal("0", ScalarText(temp.DbPath, "SELECT COUNT(*) FROM app_lock;")); // no row = first run
         Assert.Empty(Directory.GetFiles(temp.Dir, "*.bak-*"));                       // new database: nothing to back up

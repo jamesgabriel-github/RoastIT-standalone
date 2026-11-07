@@ -17,10 +17,7 @@
                 <input class="input" type="tel" inputmode="tel" placeholder="0917 000 0000" autocomplete="off"
                        maxlength="@BookingLimits.PhoneMax" @bind="_phone" @bind:event="oninput" />
             </label>
-            <label class="field">
-                <span class="field-label">Pickup date &amp; time</span>
-                <input class="input" type="datetime-local" min="@MinPickup" max="@MaxPickup" value="@_pickup" @oninput="e => _pickup = e.Value?.ToString() ?? string.Empty" />
-            </label>
+            <PickupPicker @bind-Value="_pickup" Scope="Scope" Counts="Counts" />
 
             <p class="group-label" style="margin-top:4px;">Items</p>
 
@@ -108,7 +105,8 @@
         public string Qty { get; set; } = "1";
     }
 
-    private string _customer = "", _phone = "", _pickup = "", _discount = "", _paid = "", _error = "";
+    private string _customer = "", _phone = "", _discount = "", _paid = "", _error = "";
+    private DateTime _pickup; // business-local wall-clock time, edited by the PickupPicker
     private readonly List<Line> _lines = [];
     private IReadOnlyList<Product> _products = [];
     private bool _busy, _wasOpen, _loaded;
@@ -122,8 +120,8 @@
     /// <summary>Raised after a successful create (the sheet has already closed itself).</summary>
     [Parameter] public EventCallback<CreatedBooking> OnCreated { get; set; }
 
-    private string MinPickup => $"{Scope.Min:yyyy-MM-dd}T00:00";
-    private string MaxPickup => $"{Scope.Max:yyyy-MM-dd}T23:59";
+    /// <summary>Bookings per day, for the pickup calendar's dots.</summary>
+    [Parameter] public IReadOnlyDictionary<DateOnly, int> Counts { get; set; } = new Dictionary<DateOnly, int>();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -144,7 +142,7 @@
     {
         _customer = _phone = _discount = _paid = _error = "";
         // Default pickup: now + 5 hours, in business time (Q24).
-        _pickup = BookingDefaults.PickupLocal(Clock.UtcNow, Calendar).ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        _pickup = BookingDefaults.PickupLocal(Clock.UtcNow, Calendar);
         _lines.Clear();
         _busy = false;
     }
@@ -211,17 +209,11 @@
         var lines = _lines.Where(l => QtyOf(l) >= 1).Select(l => new NewBookingLine(l.ProductId, QtyOf(l))).ToList();
         if (lines.Count == 0) return; // nothing to book: nothing happens
 
-        if (!DateTime.TryParse(_pickup, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var local))
-        {
-            _error = "Choose a pickup date and time.";
-            return;
-        }
-
         _busy = true;
         try
         {
             var created = await Bookings.CreateAsync(new NewBookingInput(
-                _customer, _phone, Calendar.ToUtc(local), lines, Pesos(_discount), Pesos(_paid)));
+                _customer, _phone, Calendar.ToUtc(_pickup), lines, Pesos(_discount), Pesos(_paid)));
 
             _error = "";
             await OnClose.InvokeAsync();

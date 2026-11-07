@@ -15,7 +15,12 @@ public interface IChangeNotifier
     /// <summary>An order's money, discount or items changed. The argument is the order key.</summary>
     event Action<Guid>? OrderChanged;
 
+    /// <summary>Import replaced the whole database (plan §10.5 step 7): every screen and cached state re-reads everything.</summary>
+    event Action? DataReplaced;
+
     void NotifyCatalogChanged();
+
+    void NotifyDataReplaced();
 
     void NotifyBookingsChanged(DateOnly pickupDate);
 

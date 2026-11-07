@@ -43,4 +43,6 @@ public static class AuditActions
     public const string PaymentRecorded = "payment.recorded";
     public const string BalanceWaived = "order.balance_waived";
     public const string OrderCancelled = "order.cancelled";
+    public const string DataExported = "data.exported";
+    public const string DataImported = "data.imported";
 }

@@ -8,8 +8,11 @@ public sealed class ChangeNotifier : IChangeNotifier
     public event Action? CatalogChanged;
     public event Action<DateOnly>? BookingsChanged;
     public event Action<Guid>? OrderChanged;
+    public event Action? DataReplaced;
 
     public void NotifyCatalogChanged() => Raise(CatalogChanged, h => ((Action)h)());
+
+    public void NotifyDataReplaced() => Raise(DataReplaced, h => ((Action)h)());
 
     public void NotifyBookingsChanged(DateOnly pickupDate) => Raise(BookingsChanged, h => ((Action<DateOnly>)h)(pickupDate));
 

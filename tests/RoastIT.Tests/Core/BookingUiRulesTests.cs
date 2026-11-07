@@ -235,10 +235,10 @@ public class BookingScopeListStateTests
     private static BookingScopeState NewState() => new(new BusinessCalendar(new FakeClock()));
 
     [Fact]
-    public void List_controls_default_to_all_pickup_soonest_first_and_follow_the_selected_date()
+    public void List_controls_default_to_today_all_statuses_pickup_soonest_first_and_follow_the_selected_date()
     {
         var s = NewState();
-        Assert.Equal(BookingListOptions.Default, s.ListOptions);
+        Assert.Equal(BookingListOptions.Default with { Date = new DateOnly(2026, 11, 7) }, s.ListOptions); // D32: starts on today
 
         s.SelectDate(new DateOnly(2026, 11, 8));
         s.SetSearch("belly");
@@ -277,17 +277,97 @@ public class BookingDefaultsTests
     private static readonly BusinessCalendar Cal = new(new FakeClock());
 
     [Fact]
-    public void Default_pickup_is_now_plus_five_hours_in_Manila_time_cut_to_the_minute()
+    public void Default_pickup_is_now_plus_five_hours_in_Manila_time_with_minutes_at_00()
     {
         // 03:00:42 UTC = 11:00 Manila; + 5 h = 16:00.
         var now = new DateTime(2026, 11, 7, 3, 0, 42, DateTimeKind.Utc);
         Assert.Equal(new DateTime(2026, 11, 7, 16, 0, 0), BookingDefaults.PickupLocal(now, Cal));
+
+        // 03:42 UTC = 11:42 Manila; + 5 h = 16:42, shown as 16:00.
+        Assert.Equal(new DateTime(2026, 11, 7, 16, 0, 0), BookingDefaults.PickupLocal(now.AddMinutes(42), Cal));
     }
 
     [Fact]
     public void Default_pickup_rolls_into_the_next_business_day()
     {
         var now = new DateTime(2026, 11, 7, 12, 30, 0, DateTimeKind.Utc); // 20:30 Manila
-        Assert.Equal(new DateTime(2026, 11, 8, 1, 30, 0), BookingDefaults.PickupLocal(now, Cal));
+        Assert.Equal(new DateTime(2026, 11, 8, 1, 0, 0), BookingDefaults.PickupLocal(now, Cal));
+    }
+}
+
+public class PickupTimeTests
+{
+    private static readonly DateOnly Day = new(2026, 10, 10);
+
+    [Theory]
+    [InlineData(12, false, 0)]
+    [InlineData(1, false, 1)]
+    [InlineData(11, false, 11)]
+    [InlineData(12, true, 12)]
+    [InlineData(1, true, 13)]
+    [InlineData(11, true, 23)]
+    [InlineData(0, true, 12)]   // out of range counts as 12
+    [InlineData(99, false, 0)]
+    public void Hour24_maps_12_hour_clock(int hour12, bool pm, int expected) =>
+        Assert.Equal(expected, PickupTime.Hour24(hour12, pm));
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("00", false)]
+    [InlineData("59", false)]
+    [InlineData("60", true)]
+    [InlineData("75", true)]
+    public void MinuteOutOfRange_flags_only_digits_above_59(string? raw, bool expected) =>
+        Assert.Equal(expected, PickupTime.MinuteOutOfRange(raw));
+
+    [Theory]
+    [InlineData("007", "07")]
+    [InlineData("075", "75")]
+    [InlineData("a1b2", "12")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void CleanMinuteInput_keeps_the_last_two_digits(string? raw, string expected) =>
+        Assert.Equal(expected, PickupTime.CleanMinuteInput(raw));
+
+    [Theory]
+    [InlineData("7", "07")]
+    [InlineData("75", "59")]
+    [InlineData("", "00")]
+    [InlineData(null, "00")]
+    [InlineData("30", "30")]
+    public void NormalizeMinute_pads_clamps_and_defaults(string? raw, string expected) =>
+        Assert.Equal(expected, PickupTime.NormalizeMinute(raw));
+
+    [Fact]
+    public void Compose_joins_the_parts()
+    {
+        Assert.Equal(new DateTime(2026, 10, 10, 10, 0, 0), PickupTime.Compose(Day, 10, "00", pm: false));
+        Assert.Equal(new DateTime(2026, 10, 10, 0, 5, 0), PickupTime.Compose(Day, 12, "5", pm: false));
+        Assert.Equal(new DateTime(2026, 10, 10, 12, 59, 0), PickupTime.Compose(Day, 12, "75", pm: true));
+        Assert.Equal(new DateTime(2026, 10, 10, 15, 0, 0), PickupTime.Compose(Day, 3, "", pm: true));
+    }
+
+    [Theory]
+    [InlineData(0, 30, 12, "30", false)]
+    [InlineData(10, 0, 10, "00", false)]
+    [InlineData(12, 0, 12, "00", true)]
+    [InlineData(13, 5, 1, "05", true)]
+    [InlineData(23, 59, 11, "59", true)]
+    public void Split_is_the_inverse_of_Compose(int hour, int minute, int hour12, string minuteText, bool pm)
+    {
+        var local = new DateTime(2026, 10, 10, hour, minute, 0);
+        var parts = PickupTime.Split(local);
+        Assert.Equal((Day, hour12, minuteText, pm), parts);
+        Assert.Equal(local, PickupTime.Compose(parts.Date, parts.Hour12, parts.Minute, parts.Pm));
+    }
+
+    [Fact]
+    public void HasPassed_compares_with_business_now()
+    {
+        var now = new DateTime(2026, 10, 10, 10, 0, 0);
+        Assert.True(PickupTime.HasPassed(now.AddMinutes(-1), now));
+        Assert.False(PickupTime.HasPassed(now, now));
+        Assert.False(PickupTime.HasPassed(now.AddHours(1), now));
     }
 }

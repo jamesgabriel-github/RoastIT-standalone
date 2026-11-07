@@ -1,6 +1,6 @@
 # RoastIT (Roastline) — Build Progress
 
-Last updated: 2026-11-07 (Phase 3 built, device checkpoint pending). Read this first in a new session, then `CLAUDE.md` and
+Last updated: 2026-11-07 (Phase 4 done, Phase 5 on hold). Read this first in a new session, then `CLAUDE.md` and
 `docs/implementation-plan.md` (the source of truth for rules and decisions).
 
 ## Status
@@ -10,12 +10,12 @@ Last updated: 2026-11-07 (Phase 3 built, device checkpoint pending). Read this f
 | 0 — Foundation | **Done.** Checkpoint passed in Visual Studio | Layout, theme, shared components, fonts, DB startup, logging |
 | 1 — App lock | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07) | Checklist kept below for reference |
 | 2 — Menu | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported | Committed as `6657006`. Checklist kept below for reference |
-| 3 — Bookings | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported | `AddBookingsDomain` migration, `IBusinessCalendar`, `OrderMath`, `BookingService` / `OrderService` / `DashboardService`, Bookings page with all sheets. Checklist kept below for reference |
-| 4 — Settings, backup, hardening | **In progress** | Settings has Security + Appearance only so far |
-| 5 — Release | Not started | |
+| 3 — Bookings | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported. Committed as `242f2b0` | `AddBookingsDomain` migration, `IBusinessCalendar`, `OrderMath`, `BookingService` / `OrderService` / `DashboardService`, Bookings page with all sheets. Checklist kept below for reference |
+| 4 — Settings, backup, hardening | **Done.** Checkpoint cleared by the user (2026-11-07). Not committed yet. Checklist kept below for reference | Settings Data/CSV/Columns, export/import, automatic CSV, `PinScope.Data`, D21 indexes + scoped reads + `<Virtualize>` |
+| 5 — Release | **On hold** by the owner (2026-11-07). Not started | |
 
 Build state: Android and Windows targets build with 0 errors and
-0 warnings. 332 tests pass (`dotnet test tests\RoastIT.Tests`).
+0 warnings. 386 tests pass, 1 skipped (`dotnet test tests\RoastIT.Tests`; the skipped one is the opt-in ten-year timing).
 
 ## Environment (this machine)
 
@@ -59,6 +59,16 @@ Build state: Android and Windows targets build with 0 errors and
   `BookingScopeState` (singleton: selected date, tab, strip, calendar month, and the list's search/status/sort).
   Because Core has no EF reference, the services talk to `IBookingStore`; `EfBookingStore` in Data runs the transactions
   (ID block claim + insert; `MutateOrderAsync` loads the order as it is now, runs the rule code, saves it with its audit rows).
+- **Phase 4 additions.** `Enums/PinScope.Data` (export/import: single-use, own scope; `AppLockService` keeps one
+  `_singleUse` map for Menu and Data). `IChangeNotifier.DataReplaced`. `Abstractions/IBackupStore` (+ `BackupFileStatus`,
+  `BackupSummary`, `BackupInspection`), `ICsvFileStore`, `ICsvBackupLog` (+ `CsvSaveInfo`). `IBookingStore` gained
+  `ListRowsByPickupAsync`, `CountByStatusAsync`, `ListPickupTimesAsync`, `GetDashboardSourceAsync`. `Rules/`: `BackupFormat`
+  (file name, dates, contents line), `BackupReminder` (7 days), `BookingsCsv` (window, hourly rule, the writer: BOM, CRLF,
+  RFC 4180, formula guard), `BookingColumnFields` (Settings switches + caption), `Dashboard.Compose` + `OrderTotalsRow` /
+  `ProductStatusCount` / `DashboardSource`. `Validation/BackupMessages`. `Services/`: `BackupService` (export, inspect, count,
+  import; PIN enforced here), `CsvBackupService` (singleton; never throws; skipped while locked). `BookingService` gained
+  `ListAsync(DateOnly?)`, `StatusCountsAsync`, `CountsByDateAsync`; `DashboardService` uses SQL totals. Core now references
+  `Microsoft.Extensions.Logging.Abstractions` (10.0.14, it already came in through Identity).
 
 ### `RoastIT.Data`
 - `RoastItDbContext` (UTC `DateTime` converter via `ConfigureConventions`; configurations
@@ -76,6 +86,14 @@ Build state: Android and Windows targets build with 0 errors and
   `discount_amount <= total_amount`, `payments.amount > 0`, no cascade deletes; the only indexes are the foreign-key ones EF
   creates by convention — the real indexes still wait for Phase 4, D21). `Configurations/BookingsConfigurations.cs`,
   `Repositories/EfBookingStore`.
+- **Phase 4 additions.** Migration `AddPerformanceIndexes` (index changes only: `ix_orders_pickup_at`, `ix_items_status`,
+  `ix_products_active`, covering `ix_items_order_status_id` and `ix_items_product_status`, which replace EF's two FK indexes on
+  `items`). `Repositories/SqliteBackupStore`: export = `VACUUM INTO` → `journal_mode=DELETE`, `secure_delete`, delete
+  `app_lock`, stamp `exported_at`, `VACUUM`, then the audit row in the live DB; inspect = header check, read-only open,
+  `integrity_check`, `app_meta`, schema, counts; import = staged copy (migrate, this device's `app_lock` row, drop
+  `exported_at`, audit, stamp) → safety copy → marker → clear pools → file move → WAL → remove marker; any failure restores the
+  safety copy. `DatabaseFiles` (paths, side files, restore, prune import copies to 3, `RecoverInterruptedImport`, which
+  `DatabaseInitializer` now runs first at startup). `AfterSwapForTests` hook (internal) to simulate a failed swap.
 
 ### `RoastIT.App`
 - `MauiProgram`: DI, Serilog (daily files, 14 kept, in `AppDataDirectory/logs`), startup DB init,
@@ -102,6 +120,17 @@ Build state: Android and Windows targets build with 0 errors and
   screen now. `PreferencesStore` gained `CompactBookingList` and `BookingColumns`. `app.js` gained `watchWidth`, `scrollToStart`
   and `focusSelect`. `Sheet` gained `TitleClass`. DI: `IBusinessCalendar`, `IBookingStore`, `BookingScopeState` (singletons),
   `BookingService`, `OrderService`, `DashboardService` (scoped).
+- **Phase 4 additions.** `Pages/Settings.razor` is complete (Security, Data with the 7-day reminder, CSV card, Appearance
+  with the spec's two captions, Columns to show with *Show all*, version + build). `Components/Settings/`: `ExportSheet`,
+  `ImportSheet` (states A/B, existing-bookings warning, inline errors), `CsvBackupCard` (saved / never / failed-retry /
+  unsupported, Share/Open, reinstall note). `Services/`: `ExternalActivityGuard` (Q11; MAUI-free, linked into tests),
+  `DataTransferService` (cache folder, `Share`, `FilePicker`, `lastExportAt`), `CsvFileStores.cs` (`ICsvFileShare`,
+  `UnsupportedCsvFileStore` for Windows), `PreferencesCsvBackupLog`; `PreferencesStore` gained `LastExportAt`, `LastCsvSave`,
+  `CsvUri` (new key `lastCsvCount`). `Platforms/Android/AndroidCsvFileStore` (MediaStore: remembered URI → look up own row →
+  insert; `"wt"`; opens the file with an `ACTION_VIEW` chooser). `App.xaml.cs`: the guard decides whether Stopped/Resumed lock;
+  the CSV loop (check on start/resume/unlock, then every minute; cancelled on Stopped). Bookings page: loads only the scope
+  (one day's rows, or all rows for the all-dates list; chips, badges and Dashboard from SQL), reloads on `DataReplaced`;
+  `BookingListTab` takes `StatusCounts` and switches to `<Virtualize>` above 150 entries. New icon `share` (app-only).
 
 ### `RoastIT.Tests`
 Real SQLite temp files (`TempDb`, `AppLockFixture`, `FakeClock`). The App project only targets
@@ -112,6 +141,14 @@ csproj. Any new App service worth testing must be free of MAUI types and added t
 Phase 3 tests: `BookingsTestBase` (services over a migrated temp DB, clock at Sat 2026-11-07 11:00 Manila), `BookingServiceTests`,
 `OrderServiceTests`, `BookingRulesTests` (OrderMath, statuses, calendar, window, scope state, formats),
 `BookingListingAndDashboardTests`, `BookingUiRulesTests` (columns, prompts, chart layout, list state).
+
+Phase 4 tests: `TestDevice` (one "phone": its own initialised DB file, PIN and backup services; two of them simulate moving a
+backup between installs), `Data/BackupTests` (export strips the PIN with a byte search for the hashes, Data PIN rules,
+inspection refusals incl. corrupt / newer schema / WAL-mode file, import keeps this device's PIN, older-schema migrate, failed
+swap restore, force-close recovery at start, pruning), `Core/CsvBackupTests` (writer, ±24 h across Manila midnight, hourly
+rule, no save on booking changes, failing store, locked, unsupported), `Core/ScopedQueriesTests` (SQL Dashboard equals the
+Phase 3 in-memory `Dashboard.Build` for all dates and four days, date-scoped lists, Manila day boundary, chips, badges,
+indexes), `Core/SettingsRulesTests` (texts, columns, `ExternalActivityGuard`), `Perf/TenYearDataTests` (opt-in, below).
 
 ## How the main pieces fit
 
@@ -156,7 +193,34 @@ Phase 3 tests: `BookingsTestBase` (services over a migrated temp DB, clock at Sa
   re-queries itself on `OrderChanged`/`BookingsChanged`. The list's search/status/sort live in `BookingScopeState` (not the page),
   so they survive going to Menu and back, and reset on app restart.
 - `<text>` in SVG: Razor reserves that tag name, so `KitchenLoadChart` builds the SVG text elements with the render tree.
-- `<input type="datetime-local">` can't use `@bind` to a string (Blazor wants a `DateTime`), so New booking binds it by hand.
+- **New booking pickup picker** (prototype `bookings-prototype_new_book_date_picker.html`): the `datetime-local` input is replaced by
+  `PickupPicker.razor`, a Date part (button → "Pickup date" calendar sheet with booking dots, plus Today / Tomorrow chips) and a Time
+  part (hour 1–12 list : typed minutes : AM/PM), with a summary line that warns "This time has already passed." The parts are joined
+  and split by `Core/Rules/PickupTime` (tested in `PickupTimeTests`). The picker keeps its own calendar month, so it doesn't move the
+  Bookings filter. Unchanged from Q24: default is now + 5 h with minutes set to 00 (not the prototype's tomorrow 10:00), past pickups are allowed, and
+  `CreateAsync` still enforces today ± 6 months. The picker always holds a value, so the "Choose a pickup date and time." message
+  can no longer appear. Not yet checked on a device: light/dark at phone width, and typing non-digits in the minutes field.
+- **Phase 4.** Open questions Q29–Q37 added to plan §15.1 (export counts on share-sheet open, exact 7-day reminder, cancelled
+  bookings counted, any file type in the picker, no CSV before Android 10, CSV column contents, import safety copies and the
+  cut-off swap, "all dates" with years of data, errors inline in the sheets); Q11 is now implemented (`ExternalActivityGuard`).
+  Their current assumptions are implemented. **Q36 was decided by the owner as D32**: Bookings opens on today, and "all dates"
+  (list, chips, Dashboard) means today ± 6 months, through `ScheduleWindow.RangeUtc`. Older bookings are still in the database
+  and exports but no longer on the Bookings page. Ten-year timing after D32: all-dates list ≈90 ms, all-dates Dashboard ≈60 ms.
+  The owner also chose to keep Q33 as is (no CSV before Android 10).
+- `CsvBackupService` lives in **Core**, not the app (plan §10.6 said app), so the hourly rule and the failure handling are tested;
+  the app supplies `ICsvFileStore` (MediaStore) and `ICsvBackupLog` (Preferences). The plan section is updated.
+- New Preferences key **`lastCsvCount`** (the card's "· 6 bookings"); `CLAUDE.md` and plan §10.4 updated.
+- `PinScope.Data` is new (plan §9.5 snippet updated). Export/import confirmations are single-use and can't be spent on Menu
+  actions or the other way round.
+- The export audit row is written to the live database after the copy is made, so a backup never contains its own
+  `data.exported` row. The import's `data.imported` row is written into the imported data.
+- Import works on a **staged copy**: migrations, the lock row and the audit row are done there first, so the live database
+  is only touched by the final file move. `exported_at` is removed from the imported data (it's only for exported copies).
+- D21 indexes: measured with ten years of data, the plan's starting set wasn't enough for the all-dates Dashboard (≈600 ms on
+  a PC). Two **covering** indexes on `items` bring it to ≈190 ms; they replace EF's plain FK indexes on `items`. The migration
+  only changes indexes, so no table is rebuilt.
+- The Dashboard tie-break for equal balances and pickups now uses the order's first booking ID in `Dashboard.Build` too
+  (it used whichever row came first), so the SQL and in-memory versions agree exactly.
 - **D31 (owner's request):** the kitchen load chart now has a fixed 12 AM – 11:59 PM axis for the selected date, an hourly tick
   every 40 px, and scrolls sideways (y-axis labels pinned). Today shows a dashed now line and opens centred on it. Items counted
   are unchanged. `KitchenChartLayout.Build` takes the date and now; `app.js` gained `scrollLeftTo`. The bookings prototype, spec §11 and plan
@@ -234,25 +298,66 @@ After installing over the Phase 2 build, the `AddBookingsDomain` migration runs 
 11. **Light and dark mode** at phone width on every piece above, and the keyboard behaviour inside the New booking sheet (the
     focused field scrolls into view; numeric keyboards for qty and amounts).
 
-## Next: finish the Phase 3 checkpoint, then Phase 4 — Settings, backup, hardening (plan §10.5, §10.6, §13 Phase 4)
+## Phase 4 device checkpoint (run by the user, cleared 2026-11-07; plan §13 Phase 4, settings spec §11)
 
-**Next step (start of the next session):** ask the user how the Phase 3 checkpoint went and fix what they found. Then commit Phase 3
-and build Phase 4 in the order of plan §13: Settings → Columns to show (the `BookingColumns` model, the `bookingColumns`
-preference and the card/columns wiring already exist; only the Settings UI is missing), the list-view preference (already wired
-on the Bookings page), Export/Import (§10.5), the 7-day backup warning, the automatic CSV backup (§10.6), the D21 indexes /
-`<Virtualize>` / SQL totals, and `android:allowBackup="false"`. Open Phase 4 questions go in plan §15.1 as Q29+.
+Nothing in Phase 4 was run by Claude on a device. Installing over the Phase 3 build runs the `AddPerformanceIndexes` migration
+at start (a safety copy is saved first). **Export a backup before trying Import**, and try Import on a phone whose data you can
+lose (or after exporting).
 
-Things to keep in mind from Phase 3:
-- Lists, the Dashboard and the date badges are computed **in memory** from `BookingService.ListAsync` (every booking, joined
-  to order and product). That is fine for now and is exactly what D21 schedules for rework in Phase 4.
-- The CSV backup needs "bookings with pickup within ±24 h of the save": `IBookingStore.ListRowsAsync` + `BookingRow` already carry
-  the order and product fields it needs (notes are in `BookingRow.Notes`; started cooking in `StartedCookingAt`).
-- Import replaces the database file: `BookingScopeState` and any open page hold stale data afterwards; reload the app's data as
-  plan §10.5 step 7 says (the change notifier has no "everything changed" event yet).
+1. **Settings page.** All five sections at phone width in light and dark mode; the theme caption changes when Device is picked;
+   the version line shows the build number.
+2. **Columns to show.** Each switch changes the Bookings cards straight away (go to Bookings and back); the caption counts
+   hidden columns (singular for 1); *Show all* appears only when something is hidden; Booking ID has no switch; the choice
+   survives a restart.
+3. **Backup reminder.** On a fresh install: *No backup yet…*. It disappears after an export, and the Export row shows
+   *Last export: …*.
+4. **Export.** The PIN prompt appears every time (even straight after another export, and without the 3-minute note); the share
+   sheet opens **without locking the app** on the way there or back; save the file to Drive or Downloads; the toast reads
+   *Backup saved: roastline-backup-YYYYMMDD-HHmm.roastline*. Pressing Home afterwards still locks the app.
+5. **Import, refusals.** Choosing a photo, a text file, or a `.roastline` with some bytes changed shows *This file isn't a
+   Roastline backup…*; current data is unchanged. (A newer-schema file can only be made by hand; the tests cover it.)
+6. **Import, across installs.** Export on phone/install A. On install B (fresh install, own PIN): choose the file → the summary
+   (file, date, version, counts) shows; if B already has bookings, the *This phone already has N bookings* warning shows
+   (singular for 1); *Replace data on this device* → PIN → toast → Bookings opens **still unlocked**; all of A's bookings,
+   payments and products are there; lock the app: **B's PIN** opens it and A's doesn't. New bookings continue A's numbering.
+7. **Import, force-close.** Start an import and force-close the app during *Replacing…*; reopen: the data is either fully the
+   old data or fully the new data, never a mix.
+8. **Automatic CSV.** A minute or so after unlocking, the card shows the file (saved time, count, pickup window). In the Files
+   app, **Documents/Roastline/roastline-bookings-48h.csv** exists; open it in Sheets/Excel: names with "ñ" and amounts look
+   right, and it holds exactly the pickups from 24 h before to 24 h after the save time. The card's Share/Open button opens
+   it. It isn't rewritten again until an hour later (the saved time stays). With the app in the background for over an hour,
+   nothing is written until it comes back to the front.
+9. **Back button.** Back closes the PIN prompt, then the Export/Import sheet; the import sheet can't be closed while
+   *Replacing…* is running.
+10. **Performance (D21).** On the cheapest target phone, on a test install: import `artifacts/perf/roastline-10-years-sample.roastline`
+    (≈31 MB, 76k generated bookings; make it with the command in CLAUDE.md "Indexes and performance"), then time: opening
+    Bookings (all dates list), Today, the Dashboard for all dates and for today, typing in search, scrolling the long list, and
+    switching Detailed ⇄ Compact. Desktop numbers for comparison: all-dates list ≈90 ms, all-dates Dashboard ≈60 ms, one day
+    ≈1–2 ms.
+11. **D32.** Bookings opens on **Today** (the label reads *Showing Today*, today's tile is selected), also after a restart.
+    Tapping today's tile or *All* shows all dates; with the ten-year file, the all-dates list and the *All · N* chip only hold
+    bookings from today − 6 months to today + 6 months, and the Dashboard for all dates matches.
+
+## Next: Phase 5 — Release is on hold (plan §14, §13 Phase 5)
+
+The Phase 4 checkpoint is cleared. The owner has put Phase 5 on hold, so **do not start it** until they say so.
+
+**Next step (start of the next session):** Phase 4 is still **uncommitted** in the working tree (and so are the date-picker and
+D31/D32 changes); commit it if the owner asks. Still open: the owner was offered a "Save to a folder…" export option (Storage
+Access Framework), which would also make Q29's "Last export" exact. No answer yet, so nothing is built.
+
+When Phase 5 is resumed, it covers: the signing keystore (outside the repo), the signed release APK, a release build check
+(trimming can break EF Core: run the release build on the phone with real data), the upgrade test over the previous APK,
+`CHANGELOG.md`, and a Git tag.
+
+Things to keep in mind from Phase 4:
+- `android:allowBackup="false"` was already in the manifest from Phase 0 (D14); nothing to change.
+- The CSV file store is Android 10+ only; Windows registers `UnsupportedCsvFileStore` (D30).
+- The release build must keep EF Core working under trimming; check export/import there too (they use raw SQLite commands).
 
 ## Working agreements (from CLAUDE.md, repeated because they matter)
 
 Build phase by phase and finish each checkpoint. Check the decision log before changing behaviour;
-changes get a new `D` row, new questions get the next `Q` number (next free: Q29 / D32). Add tests
+changes get a new `D` row, new questions get the next `Q` number (next free: Q38 / D33). Add tests
 for every rule touched, with real SQLite. Money is `long` centavos; times are UTC `DateTime`,
 "today" comes from `IBusinessCalendar` (Asia/Manila). Never log the PIN, its hash or the recovery code.

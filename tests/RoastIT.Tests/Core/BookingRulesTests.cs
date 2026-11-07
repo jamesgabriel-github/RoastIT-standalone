@@ -152,10 +152,11 @@ public class BookingScopeStateTests
     private static BookingScopeState NewState() => new(new BusinessCalendar(new FakeClock())); // today = 2026-11-07
 
     [Fact]
-    public void Starts_on_all_dates_the_list_tab_and_a_strip_two_days_before_today()
+    public void Starts_on_today_the_list_tab_and_a_strip_two_days_before_today()
     {
         var s = NewState();
-        Assert.Null(s.SelectedDate);
+        Assert.Equal(new DateOnly(2026, 11, 7), s.SelectedDate); // D32
+        Assert.Equal("Today", BookingFormat.ScopeLabel(s.SelectedDate, s.Today));
         Assert.Equal(BookingTab.List, s.ActiveTab);
         Assert.Equal(new DateOnly(2026, 11, 5), s.StripStart);
         Assert.Equal(new DateOnly(2026, 11, 1), s.CalendarMonth);
@@ -167,7 +168,7 @@ public class BookingScopeStateTests
         var s = NewState();
         Assert.False(s.SelectDate(new DateOnly(2027, 5, 8)));
         Assert.False(s.ToggleDate(new DateOnly(2026, 5, 6)));
-        Assert.Null(s.SelectedDate);
+        Assert.Equal(new DateOnly(2026, 11, 7), s.SelectedDate); // unchanged
         Assert.True(s.SelectDate(new DateOnly(2027, 5, 7)));
         Assert.Equal(new DateOnly(2027, 5, 7), s.SelectedDate);
     }
@@ -176,6 +177,8 @@ public class BookingScopeStateTests
     public void Tapping_the_selected_date_clears_it()
     {
         var s = NewState();
+        s.ToggleDate(new DateOnly(2026, 11, 7)); // today, selected at start
+        Assert.Null(s.SelectedDate);
         s.ToggleDate(new DateOnly(2026, 11, 8));
         Assert.Equal(new DateOnly(2026, 11, 8), s.SelectedDate);
         s.ToggleDate(new DateOnly(2026, 11, 8));
@@ -269,12 +272,14 @@ public class BookingScopeStateTests
         var s = NewState();
         var raised = 0;
         s.Changed += () => raised++;
-        s.SelectDate(null);            // already all dates
         s.SetTab(BookingTab.List);     // already the list
         Assert.Equal(0, raised);
+        s.SelectDate(null);            // today → all dates
+        s.SelectDate(null);            // already all dates
+        Assert.Equal(1, raised);
         s.SetTab(BookingTab.Dashboard);
         s.SelectDate(new DateOnly(2026, 11, 8));
-        Assert.Equal(2, raised);
+        Assert.Equal(3, raised);
         Assert.Equal(BookingTab.Dashboard, s.ActiveTab);
     }
 }

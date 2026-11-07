@@ -21,5 +21,7 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(x => x.Description).HasColumnName("description");
         b.Property(x => x.Active).HasColumnName("active").HasDefaultValue(true);
         b.Property(x => x.CreatedAt).HasColumnName("created_at");
+
+        b.HasIndex(x => x.Active).HasDatabaseName("ix_products_active"); // D21
     }
 }

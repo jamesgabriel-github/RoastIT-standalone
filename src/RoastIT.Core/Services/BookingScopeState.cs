@@ -22,11 +22,12 @@ public sealed class BookingScopeState
     {
         _calendar = calendar;
         var today = calendar.Today();
+        SelectedDate = today; // the page opens on today (D32); tapping it again shows all dates
         StripStart = ClampStripStart(today.AddDays(-2));
         CalendarMonth = FirstOfMonth(today);
     }
 
-    /// <summary>Null = all dates.</summary>
+    /// <summary>Null = all dates (today ± 6 months, D32). Starts on today.</summary>
     public DateOnly? SelectedDate { get; private set; }
 
     public BookingTab ActiveTab { get; private set; } = BookingTab.List;

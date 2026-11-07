@@ -47,7 +47,7 @@ created dialog is open.
 
 | State | Holder | Default | Notes |
 |---|---|---|---|
-| `SelectedDate` | `BookingScopeState` (scoped) | null (= all dates) | Shared by both tabs. Rejects dates outside ±6 months |
+| `SelectedDate` | `BookingScopeState` (scoped) | **today** (D32; null = all dates, which means today ± 6 months) | Shared by both tabs. Rejects dates outside ±6 months |
 | `ActiveTab` | `BookingScopeState` | `list` | `dashboard` / `list` |
 | `StripStart` | `BookingScopeState` | today − 2 days | First day in the 10-day strip |
 | `CalendarMonth` | `BookingScopeState` | today's month | Month shown in the calendar sheet |
@@ -163,7 +163,7 @@ Bottom sheet over everything (z 60/61).
      re-rendering the field.
 2. **Status chips:** All · Pending · Cooking · Cooked · Completed ·
    Cancelled, each with ` · {count}`.
-   - Counts are **global**: all bookings, ignoring date and search.
+   - Counts are **global**: they ignore the selected date and the search, and cover what "all dates" covers, today ± 6 months (D32).
    - With the seed data: All · 20, Pending · 8, Cooking · 1, Cooked · 1,
      Completed · 9, Cancelled · 1.
 3. **Meta row** (min 36 px, items spaced apart):

@@ -20,6 +20,73 @@ public sealed class EfBookingStore(IDbContextFactory<RoastItDbContext> dbFactory
         return await Rows(db.Items.AsNoTracking()).ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<BookingRow>> ListRowsByPickupAsync(DateTime fromUtc, DateTime toUtcExclusive, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await Rows(db.Items.AsNoTracking().Where(i => i.Order!.PickupAt >= fromUtc && i.Order.PickupAt < toUtcExclusive)).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyDictionary<ItemStatus, int>> CountByStatusAsync(DateTime fromUtc, DateTime toUtcExclusive, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.Items.AsNoTracking()
+            .Where(i => i.Order!.PickupAt >= fromUtc && i.Order.PickupAt < toUtcExclusive)
+            .GroupBy(i => i.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
+    }
+
+    public async Task<IReadOnlyList<DateTime>> ListPickupTimesAsync(DateTime fromUtc, DateTime toUtcExclusive, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.Items.AsNoTracking()
+            .Where(i => i.Order!.PickupAt >= fromUtc && i.Order.PickupAt < toUtcExclusive)
+            .Select(i => i.Order!.PickupAt)
+            .ToListAsync(ct);
+    }
+
+    public async Task<DashboardSource> GetDashboardSourceAsync(DateTime? fromUtc, DateTime? toUtcExclusive, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var orders = db.Orders.AsNoTracking();
+        var items = db.Items.AsNoTracking();
+        if (fromUtc is { } from && toUtcExclusive is { } to)
+        {
+            orders = orders.Where(o => o.PickupAt >= from && o.PickupAt < to);
+            items = items.Where(i => i.Order!.PickupAt >= from && i.Order.PickupAt < to);
+        }
+
+        // Two flat reads joined here: one GROUP BY over items is much cheaper than a correlated subquery per order.
+        var perOrder = await items
+            .GroupBy(i => i.OrderKey)
+            .Select(g => new { OrderKey = g.Key, Active = g.Count(i => i.Status != ItemStatus.Cancelled), FirstId = g.Min(i => i.BookingId) })
+            .ToDictionaryAsync(x => x.OrderKey, ct);
+        var money = await orders
+            .Select(o => new { o.Key, o.Customer, o.PickupAt, o.TotalAmount, o.DiscountAmount, o.AmountPaid })
+            .ToListAsync(ct);
+        var totals = money
+            .Where(o => perOrder.ContainsKey(o.Key))
+            .Select(o =>
+            {
+                var info = perOrder[o.Key];
+                return new OrderTotalsRow(o.Key, o.Customer, o.PickupAt, o.TotalAmount, o.DiscountAmount, o.AmountPaid, info.Active == 0, info.FirstId!);
+            })
+            .ToList();
+
+        // Grouped on the covering index; names come from the (small) products table afterwards.
+        var grouped = await items
+            .GroupBy(i => new { i.ProductId, i.Status })
+            .Select(g => new { g.Key.ProductId, g.Key.Status, Count = g.Count() })
+            .ToListAsync(ct);
+        var names = await db.Products.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+        var counts = grouped
+            .Select(g => new ProductStatusCount(g.ProductId, names.GetValueOrDefault(g.ProductId, ""), g.Status, g.Count))
+            .ToList();
+
+        return new DashboardSource(totals, counts);
+    }
+
     public async Task<IReadOnlyList<BookingRow>> ListOrderRowsAsync(string bookingId, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

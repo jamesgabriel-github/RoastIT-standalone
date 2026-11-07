@@ -30,9 +30,76 @@ public sealed record DashboardData(
     IReadOnlyList<BalanceDueRow> BalanceDueTop,
     int BalanceDueMore);
 
+/// <summary>One order's money as stored, with whether every one of its bookings is cancelled (D23).</summary>
+public sealed record OrderTotalsRow(
+    Guid OrderKey,
+    string? Customer,
+    DateTime PickupAt,
+    long TotalAmount,
+    long DiscountAmount,
+    long AmountPaid,
+    bool FullyCancelled,
+    string FirstBookingId)
+{
+    public long NetTotal => OrderMath.NetTotal(TotalAmount, DiscountAmount);
+
+    public long Balance => OrderMath.Balance(TotalAmount, DiscountAmount, AmountPaid);
+}
+
+/// <summary>How many bookings of one product have one status.</summary>
+public sealed record ProductStatusCount(Guid ProductId, string ProductName, ItemStatus Status, int Count);
+
+/// <summary>What SQL hands the Dashboard for one scope (D21).</summary>
+public sealed record DashboardSource(IReadOnlyList<OrderTotalsRow> Orders, IReadOnlyList<ProductStatusCount> Counts);
+
 public static class Dashboard
 {
     public const int BalanceDueRows = 5;
+
+    /// <summary>
+    /// The Dashboard from per-order totals and per-product counts (D21), the same numbers <see cref="Build"/> gives from
+    /// every booking. <paramref name="dayRows"/> are the selected date's bookings with order info (for the status breakdown
+    /// and the kitchen load); null for all dates.
+    /// </summary>
+    public static DashboardData Compose(DashboardSource source, IReadOnlyList<BookingRow>? dayRows, DateOnly? date, IBusinessCalendar calendar, DateTime nowUtc)
+    {
+        var orders = source.Orders.Where(o => !o.FullyCancelled).ToList();
+        var revenue = orders.Sum(o => o.NetTotal);
+        var collected = orders.Sum(o => o.AmountPaid);
+        var balanceDue = orders.Sum(o => o.Balance);
+        var average = orders.Count == 0 ? 0 : (revenue + orders.Count / 2) / orders.Count;
+
+        IReadOnlyList<StatusSlice>? breakdown = null;
+        IReadOnlyList<KitchenBar>? kitchen = null;
+        if (date is { } d && dayRows is not null)
+        {
+            breakdown = StatusBreakdown(dayRows);
+            if (d >= calendar.DateOf(nowUtc)) kitchen = KitchenLoad.Compute(dayRows, nowUtc);
+        }
+
+        var mix = source.Counts.Where(c => c.Status != ItemStatus.Cancelled)
+            .GroupBy(c => (c.ProductId, c.ProductName))
+            .Select(g => new ProductMixRow(g.Key.ProductId, g.Key.ProductName, g.Sum(c => c.Count)))
+            .OrderByDescending(m => m.Count).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var owing = orders.Where(o => o.Balance > 0)
+            .OrderByDescending(o => o.Balance).ThenBy(o => o.PickupAt).ThenBy(o => o.FirstBookingId, StringComparer.Ordinal)
+            .Select(o => new BalanceDueRow(o.OrderKey, BookingFormat.CustomerLabel(o.Customer), o.PickupAt, o.Balance))
+            .ToList();
+
+        return new DashboardData(source.Counts.Sum(c => c.Count), revenue, collected, balanceDue, average, breakdown, kitchen, mix,
+            owing.Take(BalanceDueRows).ToList(), Math.Max(0, owing.Count - BalanceDueRows));
+    }
+
+    private static List<StatusSlice> StatusBreakdown(IEnumerable<BookingRow> rows)
+    {
+        var list = rows.ToList();
+        return Enum.GetValues<ItemStatus>()
+            .Select(s => new StatusSlice(s, list.Count(r => r.Status == s)))
+            .Where(s => s.Count > 0)
+            .ToList();
+    }
 
     /// <summary>
     /// Builds the Dashboard for a pickup date, or for all dates when <paramref name="date"/> is null. Money figures use
@@ -42,21 +109,15 @@ public static class Dashboard
     {
         var rows = allRows.Where(r => date is null || calendar.DateOf(r.PickupAt) == date).ToList();
 
-        // Money is per order, so count each order once.
-        var orders = rows.Where(r => !r.OrderCancelled).GroupBy(r => r.OrderKey).Select(g => g.First()).ToList();
+        // Money is per order, so count each order once (its first booking by ID stands for it).
+        var orders = rows.Where(r => !r.OrderCancelled).GroupBy(r => r.OrderKey)
+            .Select(g => g.OrderBy(r => r.BookingId, StringComparer.Ordinal).First()).ToList();
         var revenue = orders.Sum(o => o.NetTotal);
         var collected = orders.Sum(o => o.AmountPaid);
         var balanceDue = orders.Sum(o => o.Balance);
         var average = orders.Count == 0 ? 0 : (revenue + orders.Count / 2) / orders.Count; // rounded to the centavo
 
-        IReadOnlyList<StatusSlice>? breakdown = null;
-        if (date is not null)
-        {
-            breakdown = Enum.GetValues<ItemStatus>()
-                .Select(s => new StatusSlice(s, rows.Count(r => r.Status == s)))
-                .Where(s => s.Count > 0)
-                .ToList();
-        }
+        IReadOnlyList<StatusSlice>? breakdown = date is not null ? StatusBreakdown(rows) : null;
 
         IReadOnlyList<KitchenBar>? kitchen = null;
         if (date is { } d && d >= calendar.DateOf(nowUtc))

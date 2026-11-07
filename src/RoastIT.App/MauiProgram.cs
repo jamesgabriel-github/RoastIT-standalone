@@ -45,6 +45,27 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IProductStore, EfProductStore>();
 		builder.Services.AddScoped<ProductService>();
 
+		// Settings → Data (Phase 4): export/import (plan §10.5) and the automatic CSV backup (§10.6, Android only).
+		builder.Services.AddSingleton<ExternalActivityGuard>();
+		builder.Services.AddSingleton<IBackupStore>(sp => new SqliteBackupStore(
+			sp.GetRequiredService<IDbContextFactory<RoastItDbContext>>(),
+			dbPath,
+			AppInfo.Current.VersionString,
+			sp.GetRequiredService<ILogger<SqliteBackupStore>>()));
+		builder.Services.AddScoped<BackupService>();
+		builder.Services.AddScoped<DataTransferService>();
+#if ANDROID
+		builder.Services.AddSingleton<AndroidCsvFileStore>();
+		builder.Services.AddSingleton<ICsvFileStore>(sp => sp.GetRequiredService<AndroidCsvFileStore>());
+		builder.Services.AddSingleton<ICsvFileShare>(sp => sp.GetRequiredService<AndroidCsvFileStore>());
+#else
+		builder.Services.AddSingleton<UnsupportedCsvFileStore>();
+		builder.Services.AddSingleton<ICsvFileStore>(sp => sp.GetRequiredService<UnsupportedCsvFileStore>());
+		builder.Services.AddSingleton<ICsvFileShare>(sp => sp.GetRequiredService<UnsupportedCsvFileStore>());
+#endif
+		builder.Services.AddSingleton<ICsvBackupLog, PreferencesCsvBackupLog>();
+		builder.Services.AddSingleton<CsvBackupService>();
+
 		builder.Services.AddSingleton<IPreferences>(_ => Preferences.Default);
 		builder.Services.AddSingleton<PreferencesStore>();
 		builder.Services.AddSingleton<ThemeService>();

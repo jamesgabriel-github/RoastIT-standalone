@@ -330,6 +330,29 @@ button.set-row { cursor: pointer; font: inherit; }
 .set-block { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; }
 .seg { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .version { text-align: center; font-size: 12px; color: var(--fg-muted); margin: 10px 0 0; }
+button.set-row:active { opacity: 0.7; }
+button.set-row[disabled] { opacity: 0.6; cursor: default; }
+.always { font-size: 12.5px; color: var(--fg-muted); }
+.set-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 2px 0; }
+.backup-warn {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; font-size: 13px;
+  background: color-mix(in srgb, var(--status-cooking) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--status-cooking) 40%, var(--border));
+}
+.backup-warn svg { color: var(--status-cooking); flex-shrink: 0; margin-top: 1px; }
+.danger-note {
+  padding: 10px 12px; border-radius: 12px; font-size: 13px;
+  background: color-mix(in srgb, var(--status-cancelled) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--status-cancelled) 40%, var(--border));
+}
+.incl { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.btn-block { width: 100%; }
+.file-card { border: 1px solid var(--border); border-radius: 12px; padding: 4px 14px; }
+.file-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.file-row:first-child { border-top: none; }
+.file-row .k { color: var(--fg-muted); flex-shrink: 0; }
+.file-row .v { font-weight: 600; text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.set-icon.csv-failed { color: var(--status-cancelled); }
 
 /* ---- Menu page (menu-prototype) ---- */
 .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
@@ -429,6 +452,10 @@ button.set-row { cursor: pointer; font: inherit; }
 .bcard-actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
 .bcard-actions .btn { flex: 1; }
 .bcard-list.compact { gap: 6px; }
+/* Virtualized long list (D21): spacing moves onto each item so the spacer elements add no gaps. */
+.bcard-list.virtual { gap: 0; }
+.bcard-list.virtual > .vitem { padding-bottom: 10px; }
+.bcard-list.virtual.compact > .vitem { padding-bottom: 6px; }
 .crow {
   display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 0 12px 0 14px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px; text-align: left;
@@ -509,6 +536,34 @@ button.set-row { cursor: pointer; font: inherit; }
 .cal-cell[disabled] { color: var(--fg-muted); opacity: 0.4; cursor: not-allowed; }
 .cal-dot { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
 .cal-cell.selected .cal-dot { background: var(--accent-fg); }
+
+/* New booking: pickup date & time (ported from bookings-prototype_new_book_date_picker) */
+.pickup-card { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 14px; }
+.pk-part { display: flex; flex-direction: column; gap: 8px; }
+.pk-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--fg-muted); margin: 0; }
+.pk-label svg { flex-shrink: 0; }
+.date-btn {
+  width: 100%; min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 15.5px; font-weight: 700; text-align: left;
+}
+.date-btn:active { background: var(--surface-2); }
+.date-btn .cal-ico { color: var(--accent); display: flex; flex-shrink: 0; }
+.date-btn .trail { margin-left: auto; color: var(--fg-muted); display: flex; flex-shrink: 0; }
+.quick-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.quick-row .chip { height: 34px; }
+.time-row { display: flex; align-items: center; gap: 8px; }
+.hour-select { position: relative; flex: 0 0 86px; }
+.hour-select select { -webkit-appearance: none; appearance: none; padding: 0 30px 0 14px; font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+.hour-select .caret { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--fg-muted); display: flex; }
+.time-sep { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--fg-muted); line-height: 1; }
+.minute-input { flex: 0 0 64px; width: 64px; padding: 0 6px; text-align: center; font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+.input.invalid { border-color: var(--status-cancelled); }
+.time-row .segmented { flex: 1; min-width: 0; }
+.time-row .seg { height: 38px; }
+.pk-summary { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 13.5px; }
+.pk-summary-main { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.pk-summary-main svg { color: var(--status-cooked); flex-shrink: 0; }
+.pk-warn { font-size: 12.5px; font-weight: 600; color: var(--status-cooking); }
 
 /* Booking created dialog: stays open until the user taps Done */
 .created-head { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }

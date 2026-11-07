@@ -1,0 +1,146 @@
+@inject DataTransferService Transfer
+@inject PinPromptService Pins
+@inject IBusinessCalendar Calendar
+@inject ILogger<ImportSheet> Logger
+
+@* Settings → Import data (settings spec §4.4, plan §10.5, D17, D25). Always replaces; PIN every time; keeps this device's PIN. *@
+<BottomSheet Open="Open" Title="Import data" OnClose="CloseAsync">
+    @if (_picked is not { Inspection.IsValid: true } picked)
+    {
+        <div class="danger-note">Importing <b>replaces all bookings, payments and menu items on this device</b>. A safety copy of the current data is saved first.</div>
+        <button type="button" class="btn btn-block" disabled="@_busy" @onclick="PickAsync">
+            <Icon Name="upload" Size="16" /> @(_busy ? "Checking…" : "Choose backup file")
+        </button>
+        @if (_error is not null)
+        {
+            <p class="form-error" role="alert">@_error</p>
+        }
+        else
+        {
+            <p class="caption">Pick a Roastline backup (.roastline) exported from this or another device.</p>
+        }
+    }
+    else
+    {
+        var s = picked.Inspection.Summary!;
+        <div class="file-card">
+            <div class="file-row"><span class="k">File</span><span class="v">@picked.FileName</span></div>
+            <div class="file-row"><span class="k">Backup made</span><span class="v">@(s.ExportedAtUtc is { } at ? BackupFormat.When(Calendar.ToLocal(at)) : "—")</span></div>
+            <div class="file-row"><span class="k">App version</span><span class="v">@(s.AppVersion ?? "—")</span></div>
+            <div class="file-row"><span class="k">Contains</span><span class="v">@BackupFormat.Contents(s)</span></div>
+        </div>
+        @if (picked.ExistingBookings > 0)
+        {
+            <div class="backup-warn" role="alert">
+                <Icon Name="warn" Size="18" />
+                <span><b>@BackupMessages.ExistingBookingsLead(picked.ExistingBookings)</b> @BackupMessages.ExistingBookingsRest(picked.ExistingBookings)</span>
+            </div>
+        }
+        <div class="danger-note">Everything currently on this device will be replaced. <b>Your PIN and recovery code stay the same</b> — backups don't include them.</div>
+        @if (_error is not null)
+        {
+            <p class="form-error" role="alert">@_error</p>
+        }
+        <button type="button" class="btn btn-block btn-danger-solid" disabled="@_busy" @onclick="ReplaceAsync">
+            @(_busy ? "Replacing…" : "Replace data on this device")
+        </button>
+        <button type="button" class="btn btn-block" disabled="@_busy" @onclick="PickAsync">
+            <Icon Name="upload" Size="16" /> Choose a different file
+        </button>
+    }
+</BottomSheet>
+
+@code {
+    private PickedBackup? _picked;
+    private string? _error;
+    private bool _busy, _wasOpen;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The data was replaced: the page shows the toast and opens Bookings.</summary>
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Open && !_wasOpen) Reset();
+        _wasOpen = Open;
+    }
+
+    private void Reset()
+    {
+        _picked = null;
+        _error = null;
+        Transfer.Discard();
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_busy) return; // never close in the middle of the swap
+        Reset();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task PickAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var picked = await Transfer.PickAsync();
+            if (picked is null) return; // cancelled: keep whatever was shown
+            _picked = picked;
+            _error = BackupService.ErrorFor(picked.Inspection);
+        }
+        catch (AccessDeniedException)
+        {
+            // Locked meanwhile.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Inspecting the picked file failed");
+            _picked = null;
+            _error = BackupMessages.Unreadable;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReplaceAsync()
+    {
+        if (_busy || _picked is not { Inspection.IsValid: true } picked) return;
+        _error = null;
+        var pin = await Pins.RequestAsync($"Replace all data on this device with {picked.FileName}.", "Replace", PinScope.Data);
+        if (!pin.Confirmed || pin.Confirmation is null) return;
+
+        _busy = true;
+        try
+        {
+            await Transfer.ImportAsync(picked, pin.Confirmation);
+            _busy = false;
+            _picked = null;
+            await OnImported.InvokeAsync();
+        }
+        catch (ValidationException ex)
+        {
+            // The file stopped being usable since it was checked: back to choosing, with the reason.
+            _picked = null;
+            _error = ex.Message;
+        }
+        catch (AccessDeniedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Import failed; the previous data was restored");
+            _error = BackupMessages.ImportFailed;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

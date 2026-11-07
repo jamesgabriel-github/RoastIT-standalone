@@ -1,0 +1,66 @@
+@inject DataTransferService Transfer
+@inject PinPromptService Pins
+@inject ILogger<ExportSheet> Logger
+
+@* Settings → Export data (settings spec §4.3, plan §10.5). PIN every time; the file never contains the PIN. *@
+<BottomSheet Open="Open" Title="Export data" OnClose="OnClose">
+    <p class="caption">Creates one backup file with everything stored on this device:</p>
+    <ul class="incl">
+        <li>Bookings, items, payments and discounts</li>
+        <li>Menu (active and inactive products)</li>
+    </ul>
+    <p class="caption">Not included: your <b>PIN and recovery code</b> (they never leave this device), and theme, column and list-view settings.</p>
+    <p class="caption">Save the file somewhere off this phone — Google Drive, email, or a computer.</p>
+    @if (_error is not null)
+    {
+        <p class="form-error" role="alert">@_error</p>
+    }
+    <button type="button" class="btn btn-primary btn-block" disabled="@_busy" @onclick="ExportAsync">
+        <Icon Name="download" Size="16" /> @(_busy ? "Exporting…" : "Export backup")
+    </button>
+</BottomSheet>
+
+@code {
+    private bool _busy, _wasOpen;
+    private string? _error;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The file was made and the share sheet opened: the page closes the sheet and shows the toast.</summary>
+    [Parameter] public EventCallback<ExportedBackup> OnExported { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Open && !_wasOpen) _error = null;
+        _wasOpen = Open;
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_busy) return;
+        _error = null;
+        var pin = await Pins.RequestAsync("Export all bookings, payments and the menu to a backup file.", "Export", PinScope.Data);
+        if (!pin.Confirmed || pin.Confirmation is null) return;
+
+        _busy = true;
+        try
+        {
+            var exported = await Transfer.ExportAsync(pin.Confirmation);
+            await OnExported.InvokeAsync(exported);
+        }
+        catch (AccessDeniedException)
+        {
+            // The app locked meanwhile: the lock screen takes over.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Export failed");
+            _error = BackupMessages.ExportFailed; // the sheet stays open; lastExportAt isn't touched when the file wasn't made
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -63,6 +63,41 @@ public sealed class BookingService(
         return BookingRows.WithOrderInfo(await store.ListRowsAsync(ct));
     }
 
+    /// <summary>
+    /// The bookings for one pickup date (only that day is read, D21), or for "all dates" when <paramref name="date"/> is
+    /// null, which means the schedulable window, today ± 6 months (D32). Order info is complete either way: an order's
+    /// bookings share its pickup.
+    /// </summary>
+    public async Task<IReadOnlyList<BookingRow>> ListAsync(DateOnly? date, CancellationToken ct = default)
+    {
+        appLock.EnsureUnlocked();
+        var (start, end) = date is { } d ? calendar.DayRangeUtc(d) : ScheduleWindow.RangeUtc(calendar);
+        return BookingRows.WithOrderInfo(await store.ListRowsByPickupAsync(start, end, ct));
+    }
+
+    /// <summary>
+    /// The status chip counts: they ignore the selected date and the search (bookings spec §6.1), and cover what "all dates"
+    /// covers, today ± 6 months (D32), so "All · N" matches the all-dates list.
+    /// </summary>
+    public async Task<BookingStatusCounts> StatusCountsAsync(CancellationToken ct = default)
+    {
+        appLock.EnsureUnlocked();
+        var (from, to) = ScheduleWindow.RangeUtc(calendar);
+        var by = await store.CountByStatusAsync(from, to, ct);
+        int Of(ItemStatus s) => by.GetValueOrDefault(s);
+        return new BookingStatusCounts(by.Values.Sum(), Of(ItemStatus.Pending), Of(ItemStatus.Cooking), Of(ItemStatus.Cooked),
+            Of(ItemStatus.Completed), Of(ItemStatus.Cancelled));
+    }
+
+    /// <summary>Bookings per pickup date inside the schedulable window (today ± 6 months): the strip badges and calendar dots.</summary>
+    public async Task<IReadOnlyDictionary<DateOnly, int>> CountsByDateAsync(CancellationToken ct = default)
+    {
+        appLock.EnsureUnlocked();
+        var (from, to) = ScheduleWindow.RangeUtc(calendar);
+        var times = await store.ListPickupTimesAsync(from, to, ct);
+        return times.GroupBy(calendar.DateOf).ToDictionary(g => g.Key, g => g.Count());
+    }
+
     /// <summary>The booking and its order, or null when it no longer exists.</summary>
     public async Task<BookingDetail?> GetDetailAsync(string bookingId, CancellationToken ct = default)
     {

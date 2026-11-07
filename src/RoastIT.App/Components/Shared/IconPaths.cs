@@ -36,6 +36,8 @@ public static class IconPaths
         ["upload"] = """<path d="M10 14V4"></path><polyline points="6,7.5 10,3.5 14,7.5"></polyline><path d="M4 16.5h12"></path>""",
         ["warn"] = """<path d="M10 3l7.5 13h-15z"></path><line x1="10" y1="8" x2="10" y2="11.5"></line><line x1="10" y1="14" x2="10" y2="14.2"></line>""",
         ["file"] = """<path d="M5 2.5h6.5L15 6v11.5H5z"></path><polyline points="11.5,2.5 11.5,6 15,6"></polyline><line x1="7.5" y1="10" x2="12.5" y2="10"></line><line x1="7.5" y1="13" x2="12.5" y2="13"></line>""",
+        // App-only (not in the prototypes): the CSV card's Share/Open button (settings spec §10 #4).
+        ["share"] = """<path d="M10 12.5V3"></path><polyline points="6.5,6.5 10,3 13.5,6.5"></polyline><path d="M6 9H4.5v8h11V9H14"></path>""",
         ["copy"] = """<rect x="6.5" y="6.5" width="10" height="10" rx="2"></rect><path d="M13.5 6.5V5a1.5 1.5 0 00-1.5-1.5H5A1.5 1.5 0 003.5 5v7A1.5 1.5 0 005 13.5h1.5"></path>""",
         ["backspace"] = """<path d="M7 5h9.5v10H7l-4.5-5z"></path><line x1="10" y1="8" x2="14" y2="12"></line><line x1="14" y1="8" x2="10" y2="12"></line>""",
     };

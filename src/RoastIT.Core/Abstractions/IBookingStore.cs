@@ -1,4 +1,5 @@
 using RoastIT.Core.Entities;
+using RoastIT.Core.Enums;
 using RoastIT.Core.Rules;
 
 namespace RoastIT.Core.Abstractions;
@@ -22,6 +23,25 @@ public interface IBookingStore
     /// Every booking with its order and product, flat and in no particular order (order info is not filled in).
     /// </summary>
     Task<IReadOnlyList<BookingRow>> ListRowsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Bookings whose order's pickup is in [<paramref name="fromUtc"/>, <paramref name="toUtcExclusive"/>). Every booking of an
+    /// order shares its pickup, so each order comes back whole and <c>BookingRows.WithOrderInfo</c> is correct on the result.
+    /// </summary>
+    Task<IReadOnlyList<BookingRow>> ListRowsByPickupAsync(DateTime fromUtc, DateTime toUtcExclusive, CancellationToken ct = default);
+
+    /// <summary>How many bookings with pickup in [from, to) have each status (the list's status chips). Missing statuses are 0.</summary>
+    Task<IReadOnlyDictionary<ItemStatus, int>> CountByStatusAsync(DateTime fromUtc, DateTime toUtcExclusive, CancellationToken ct = default);
+
+    /// <summary>One pickup instant per booking whose pickup is in [from, to): the date strip and calendar badges.</summary>
+    Task<IReadOnlyList<DateTime>> ListPickupTimesAsync(DateTime fromUtc, DateTime toUtcExclusive, CancellationToken ct = default);
+
+    /// <summary>
+    /// The Dashboard's inputs computed by SQL instead of loading every booking (D21): one money row per order and booking
+    /// counts per product and status, for pickups in [from, to), or for everything when both are null. The rules
+    /// (what counts as revenue, D23) are applied by <c>Dashboard.Compose</c> in Core.
+    /// </summary>
+    Task<DashboardSource> GetDashboardSourceAsync(DateTime? fromUtc, DateTime? toUtcExclusive, CancellationToken ct = default);
 
     /// <summary>All bookings of the order that contains <paramref name="bookingId"/>; empty when there is no such booking.</summary>
     Task<IReadOnlyList<BookingRow>> ListOrderRowsAsync(string bookingId, CancellationToken ct = default);

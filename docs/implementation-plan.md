@@ -329,7 +329,8 @@ At startup, once: `PRAGMA journal_mode=WAL;`.
 |---|---|---|
 | `InitialAppLock` | 1 | `app_lock`, `audit_logs`, `app_meta` |
 | `AddProductsCatalog` | 2 | `products` |
-| `AddBookingsDomain` | 3 | `orders`, `items`, `payments`, `daily_counters` + indexes |
+| `AddBookingsDomain` | 3 | `orders`, `items`, `payments`, `daily_counters` (foreign-key indexes only) |
+| `AddPerformanceIndexes` | 4 | `orders(pickup_at)`, `items(status)`, `products(active)`, and covering `items(order_key, status, booking_id)` / `items(product_id, status)`, which replace the two foreign-key indexes on `items` (D21) |
 
 ```powershell
 dotnet ef migrations add InitialAppLock -p src\RoastIT.Data -s src\RoastIT.Data
@@ -468,6 +469,13 @@ public static class OrderMath
   all dates) drives both the Dashboard and the Booking list, and the
   shared label "Showing {Today | Yesterday | Tomorrow | Wed, Sep 30, 2026 |
   all dates}".
+- **The page opens on today (D32).** Tapping the selected day, or the "All"
+  chip, shows all dates.
+- **"All dates" means the schedulable window (D32):** bookings with pickup
+  from the start of `Today() − 6 months` to the end of `Today() + 6 months`.
+  This applies to the list, the status chips and the Dashboard. Older
+  bookings stay in the database, in exports and in audit history, but the
+  Bookings page doesn't show them.
 - The device clock is the only clock. Recommend automatic time on the
   device.
 
@@ -475,7 +483,8 @@ public static class OrderMath
 
 - **Search:** booking ID, product name or customer label (so "walk-in"
   finds blank names), case-insensitive, combined with status and date.
-- **Status chips** show **global** counts that ignore date and search:
+- **Status chips** show **global** counts that ignore the selected date and
+  the search, over the same ±6-month window as "all dates" (D32):
   All · Pending · Cooking · Cooked · Completed · Cancelled.
 - **Sort:** Pickup time, Status (pipeline order), Booking ID, Customer,
   Product, Cooking time, each ascending or descending with its own labels
@@ -489,7 +498,7 @@ public static class OrderMath
     expand it into the full card, tap the card to open the detail, and
     use the arrow to collapse.
 
-### 7.6 Dashboard (scoped to the selected date or all dates)
+### 7.6 Dashboard (scoped to the selected date or all dates, i.e. today ± 6 months, D32)
 
 - **KPI tiles:**
   - Total bookings (items)
@@ -643,7 +652,7 @@ Behavior:
 Implementation:
 
 ```csharp
-public enum PinScope { Menu, Bookings }
+public enum PinScope { Menu, Bookings, Data }   // Data = Settings export/import: single-use, like Menu
 
 public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IAppLock.cs
 {
@@ -659,7 +668,8 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
 }
 ```
 
-- A `Menu` confirmation is **single-use** and expires after ~60 seconds.
+- A `Menu` or `Data` confirmation is **single-use**, only valid for its own
+  scope, and expires after ~60 seconds.
 - A `Bookings` confirmation opens a 3-minute window. Within it,
   `EnsureConfirmed(null, PinScope.Bookings)` passes.
 - Every check that takes a PIN or recovery code returns a `PinAttempt`
@@ -813,6 +823,8 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
 | PIN, recovery code, lockout | SQLite `app_lock` | never in Preferences |
 | Last export time | `Preferences["lastExportAt"]` | ISO UTC; drives the 7-day backup warning |
 | CSV last saved | `Preferences["lastCsvAt"]` | ISO UTC; drives the hourly CSV save (§10.6) |
+| CSV row count | `Preferences["lastCsvCount"]` | bookings in the last CSV save, for the Settings card |
+| CSV file | `Preferences["csvUri"]` | MediaStore URI of the CSV row, so later saves skip the lookup |
 
 ### 10.5 Export and import data
 
@@ -951,7 +963,9 @@ real backup (D14). Android only for now (D30).
   next hourly save.
 
 **Implementation**
-- `ICsvBackupService` in `RoastIT.Core`, `CsvBackupService` in the app:
+- `CsvBackupService` in `RoastIT.Core` (so the hourly rule is tested), over
+  `ICsvFileStore` (Android MediaStore in the app) and `ICsvBackupLog`
+  (`lastCsvAt` / `lastCsvCount` in Preferences):
   - `Task CheckAsync()`: reads `lastCsvAt`; if it's due, runs
     `SaveAsync()`.
   - `Task SaveAsync()`: queries the 48-hour window (one read,
@@ -1218,7 +1232,7 @@ The output is `com.roastit.app-Signed.apk` under
 | Q8 | After unlocking from auto-lock, where does the app open? | **Current assumption: always Bookings** (signin spec §1). Alternative: return to the previous route (open sheets and unsaved forms can't be restored either way) | 2026-11-07 |
 | Q9 | Setup is saved when the owner taps **Save** on the confirm view, before the recovery code is acknowledged. If the app is killed on the recovery-code view, the PIN exists but the owner may not have the code | **Current assumption: accept the risk.** Alternative: save the PIN and code hash only when **Continue** is tapped (signin spec §12.3) | 2026-11-07 |
 | Q10 | Android Back on the lock screen | **Implemented as the spec's suggestions:** Unlock/first-run setup → send the app to the background; change flow → Cancel; Forgot → Back link; recovery-code view → does nothing (signin spec §12.2) | 2026-11-07 |
-| Q11 | Locking on `Window.Stopped`/`Resumed` (D6) will also fire when the **file picker** (Import) or **share sheet** (Export) takes the screen, so the app would be locked mid-import and when returning | **Current assumption: Phase 4 suppresses the lock around those system pickers** (and keeps the app unlocked afterwards, §10.5 step 7). Not yet built | 2026-11-07 |
+| Q11 | Locking on `Window.Stopped`/`Resumed` (D6) will also fire when the **file picker** (Import) or **share sheet** (Export) takes the screen, so the app would be locked mid-import and when returning | **Implemented (Phase 4): `ExternalActivityGuard`.** Just before the picker or a share sheet opens, the app expects one trip away; the next stop/resume within **5 minutes** doesn't lock. Staying away longer, or leaving for anything else afterwards, locks as usual. The idle lock (10 min) still applies. The app stays unlocked after an import (§10.5 step 7) | 2026-11-07 |
 | Q12 | Menu: **cooking time decimals** (menu spec §10.1). The prototype accepts `1.5`; the column is an integer | **Implemented: whole minutes only.** `1.5`, text and blanks all show "Cooking time must be at least 1 minute." | 2026-11-07 |
 | Q13 | Menu: **price centavos** (menu spec §10.2). The prototype steps by whole pesos | **Implemented: up to 2 decimals** (step 0.01), stored as centavos. A third decimal is rejected with the price message. Display drops ".00" for whole pesos (₱2,200) | 2026-11-07 |
 | Q14 | Menu: **duplicate product names** (menu spec §10.3) | **Implemented: allowed** (as in the prototype). Alternative: warn or block, case-insensitive and trimmed | 2026-11-07 |
@@ -1231,11 +1245,19 @@ The output is `com.roastit.app-Signed.apk` under
 | Q21 | Bookings: **money actions on a fully cancelled order** (bookings spec §14.1) | **Implemented the spec's suggestion.** `SetDiscountAsync`, `RecordPaymentAsync` and `WriteOffBalanceAsync` refuse ("This order is cancelled."); the detail sheet hides *+ Apply discount*, Edit/Remove, *+ Record payment* and the write-off banner, and shows Balance due ₱0 (`BookingRow.BalanceDue`); the list card's money line reads *Cancelled · ₱0* | 2026-11-07 |
 | Q22 | Bookings: **overpayment** (bookings spec §14.2) | **Implemented: allowed.** The payment editor has no upper limit and `amount_paid` can exceed the net total; Balance floors at ₱0. Alternative: cap at the balance, or warn | 2026-11-07 |
 | Q23 | Bookings: **"Amount paid now" on New booking** (bookings spec §14.3) | **Implemented the plan: clamped to ≥ 0 only**, not capped at the net total (same as Q22) | 2026-11-07 |
-| Q24 | Bookings: **pickup validation** (bookings spec §14.4) | **Implemented: required** (blank shows "Choose a pickup date and time."), **default now + 5 hours** in business time (the prototype used tomorrow 10:00; changed at the owner's request), **past pickups allowed**, and `CreateAsync` **enforces today ± 6 months** ("Pickup must be within 6 months of today.") whatever the picker allows | 2026-11-07 |
+| Q24 | Bookings: **pickup validation** (bookings spec §14.4) | **Implemented: required** (blank shows "Choose a pickup date and time."), **default now + 5 hours** in business time **with the minutes set to 00** (11:42 → 4:00 PM; the picker always holds a value, so the blank message can't appear now) (the prototype used tomorrow 10:00; changed at the owner's request), **past pickups allowed**, and `CreateAsync` **enforces today ± 6 months** ("Pickup must be within 6 months of today.") whatever the picker allows | 2026-11-07 |
 | Q25 | Bookings: **"Latest first" in the grouped view** (bookings spec §14.5) | **Implemented as the spec describes:** the day groups reverse, bookings inside a day stay earliest-first. Alternative: reverse both | 2026-11-07 |
 | Q26 | Bookings: **sort ties** (bookings spec §14.6) | **Implemented: booking ID A → Z is the secondary key for every sort** (always ascending, even when the main sort is descending). Dashboard product-mix ties sort by product name A → Z (the catalog has no manual order) | 2026-11-07 |
 | Q27 | Bookings: **notes and input limits** (bookings spec §14.7) | **Notes: no field and no row in Phase 3** (the `orders.notes` column exists, stays empty, and the Phase 4 CSV can include it). **Limits, my addition:** customer ≤ 80, phone ≤ 30, **at most 100 bookings (units) in one order**, each with its own message in `BookingMessages`, so a mistyped quantity can't create thousands of rows | 2026-11-07 |
 | Q28 | Bookings: **audit rows for the discount and payment entered while creating a booking** | **Implemented: `discount.set` and `payment.recorded` rows (with `atCreation: true`)** are written in the create transaction, so every payment has a log row. Creating the booking itself writes no audit row. Setting a discount to the value it already has writes nothing | 2026-11-07 |
+| Q29 | Settings: **when does an export count** for "Last export" and the 7-day reminder (settings spec §10 #2)? Android can't tell whether the share target saved the file | **Implemented: once the file is made and the share sheet has opened.** If either fails, `lastExportAt` isn't touched. Alternative: only after the share sheet returns without cancel (not reliable on Android) | 2026-11-07 |
+| Q30 | Settings: **reminder threshold** (settings spec §10 #6) | **Implemented: more than 7 × 24 hours since the exact last-export time.** Alternative: calendar days | 2026-11-07 |
+| Q31 | Settings: **do import counts include cancelled bookings** (settings spec §10 #7)? | **Implemented: yes.** "Contains … bookings" and "This phone already has N bookings" both count every item, cancelled included (the plan's `SELECT COUNT(*) FROM items`) | 2026-11-07 |
+| Q32 | Settings: **import file types** (settings spec §10 #5) | **Implemented: the picker accepts any file**, and only the content decides (SQLite, `integrity_check`, `app_id`, schema). A renamed backup still imports; a non-backup named `.roastline` is still refused | 2026-11-07 |
+| Q33 | CSV: **Android 7–9** (API 24–28). MediaStore `RELATIVE_PATH` needs Android 10 | **Implemented: no CSV before Android 10**; the card says "The automatic CSV backup needs Android 10 or later." Alternative: the legacy public Documents folder with a storage permission | 2026-11-07 |
+| Q34 | CSV: **column contents** the plan leaves open | **Implemented:** *Order* = the order's first booking ID; a blank customer is *Walk-in customer*; *Pickup date* `2026-11-08`, *Pickup time* `5:30 PM`, *Started cooking* `2026-11-08 1:05 PM` (all Manila); *Order discount* is the clamped discount; *Notes* is empty (no notes field yet, Q27) | 2026-11-07 |
+| Q35 | Import: **safety copies and a cut-off swap** | **Implemented:** the newest **3** `roastit.db3.bak-before-import-*` copies are kept. The swap writes a marker first; if the app dies before the marker is removed, the next start puts the safety copy back. That includes the rare case where the new file was already in place, so that import has to be done again | 2026-11-07 |
+| Q37 | Settings: **where export/import errors show.** The spec says an error toast, but toasts are hidden while a bottom sheet is open (shared-ui-spec) | **Implemented: an inline error line in the open sheet** (`role="alert"`), and the sheet stays open | 2026-11-07 |
 
 ### 15.2 Decision log
 
@@ -1272,6 +1294,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D29 | **One CSV file, bookings within 48 hours.** `roastline-bookings-48h.csv` holds every booking with pickup from 24 h before to 24 h after the save, overwritten **hourly only, while the app is open** (no save after individual changes, none after import). No per-date files *(replaces D26 and D28)* | 2026-11-04 | §10.6 |
 | D30 | **CSV backup is Android only for now**, saved to `Documents/Roastline/` through MediaStore *(was Q5)* | 2026-11-04 | §10.6 |
 | D31 | **Kitchen load chart uses a fixed day axis.** It always spans the whole selected date, 12 AM to 11:59 PM (business time), with an hourly tick (12 AM … 11 PM) every 40 px, so it is wider than the phone and **scrolls sideways**; the y-axis labels stay pinned. Bar parts outside the day are cut off, but their tooltips keep the real times. Today shows a dashed "now" line and opens centred on it; other dates open an hour before the first busy bar. Which items count is unchanged (Pending and Cooking only, late pending from now). *Replaces the old "earliest start … latest end" range with 3 or 5 ticks; the bookings prototype and spec §11 are updated to match* | 2026-11-07 | §7.6, bookings spec §11 |
+| D32 | **Bookings opens on today, and "all dates" means today ± 6 months** (owner's decision). `BookingScopeState` starts with today selected; tapping it again (or "All") shows all dates. "All dates" (the list, the status chips and the Dashboard) covers pickups from the start of today − 6 months to the end of today + 6 months, the same window the date strip and calendar allow. Older bookings stay in the database, in exports and in audit history, but the Bookings page doesn't show them. With ten years of generated data, the all-dates list read went from ≈540 ms to ≈90 ms on a desktop PC and no longer grows with history. *Was Q36; changes the Phase 3 default of "all dates = every booking", shown first* | 2026-11-07 | §7.4, §7.5, §7.6, bookings spec §2 |
 
 ---
 

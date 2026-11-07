@@ -23,7 +23,7 @@ public sealed record PinAttempt(PinAttemptStatus Status, int TriesLeft = 0, Date
 public sealed record LockoutStatus(bool IsLockedOut, DateTime? LockedUntil, int TriesLeft);
 
 /// <summary>
-/// Proof that the PIN was entered for a critical action. Menu confirmations are single-use and expire
+/// Proof that the PIN was entered for a critical action. Menu and Data confirmations are single-use and expire
 /// after ~60 s; Bookings confirmations open a 3-minute window (plan §9.5).
 /// </summary>
 public sealed record PinConfirmation(Guid Id, PinScope Scope, DateTime IssuedAtUtc);
@@ -76,7 +76,8 @@ public interface IAppLock
 
     /// <summary>
     /// Throws <see cref="Exceptions.PinRequiredException"/> if there's no valid confirmation. Bookings passes inside the
-    /// remembered window (the confirmation can be null); a Menu confirmation must be present, unexpired and unused, and is consumed.
+    /// remembered window (the confirmation can be null); a Menu or Data confirmation must be present, issued for the same
+    /// scope, unexpired and unused, and is consumed.
     /// </summary>
     void EnsureConfirmed(PinConfirmation? confirmation, PinScope scope);
 

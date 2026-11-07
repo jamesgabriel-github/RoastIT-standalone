@@ -31,36 +31,56 @@
 {
     <EmptyState>@BookingListing.EmptyMessage(Scope.SelectedDate)</EmptyState>
 }
+else if (_entries.Count > VirtualizeAbove)
+{
+    @* Long lists (years of bookings under "all dates") only render what's on screen (D21). *@
+    <div class="bcard-list virtual @(_compact ? "compact" : null)">
+        <Virtualize Items="_entries" ItemSize="@(_compact ? 58 : 170)" OverscanCount="8" Context="entry">
+            <div class="vitem" @key="entry.Key">@RenderEntry(entry)</div>
+        </Virtualize>
+    </div>
+}
 else
 {
     <div class="bcard-list @(_compact ? "compact" : null)">
-        @foreach (var group in _groups)
+        @foreach (var entry in _entries)
         {
-            if (group.Date is { } date)
-            {
-                <div class="group-head">
-                    <span>@BookingFormat.LongDate(date)@if (date == Scope.Today) {<span class="today-pill">Today</span>}</span>
-                    <span class="muted">@BookingFormat.BookingCount(group.Rows.Count)</span>
-                </div>
-            }
-            foreach (var row in group.Rows)
-            {
-                if (_compact && !_expanded.Contains(row.BookingId))
-                {
-                    <CompactRow @key="row.BookingId" Row="row" TimeAlone="_timeAlone" OnExpand="Expand" />
-                }
-                else
-                {
-                    <BookingCard @key="row.BookingId" Row="row" Columns="_columns" Expanded="_compact"
-                                 OnOpen="OnOpen" OnAdvance="OnAdvance" OnCollapse="Collapse" />
-                }
-            }
+            @RenderEntry(entry)
         }
     </div>
 }
 
 @code {
-    private List<BookingGroup> _groups = [];
+    private RenderFragment RenderEntry(ListEntry entry) => __builder =>
+    {
+        if (entry.Row is not { } row)
+        {
+            var date = entry.Date!.Value;
+            <div class="group-head" @key="entry.Key">
+                <span>@BookingFormat.LongDate(date)@if (date == Scope.Today) {<span class="today-pill">Today</span>}</span>
+                <span class="muted">@BookingFormat.BookingCount(entry.GroupCount)</span>
+            </div>
+        }
+        else if (_compact && !_expanded.Contains(row.BookingId))
+        {
+            <CompactRow @key="entry.Key" Row="row" TimeAlone="_timeAlone" OnExpand="Expand" />
+        }
+        else
+        {
+            <BookingCard @key="entry.Key" Row="row" Columns="_columns" Expanded="_compact"
+                         OnOpen="OnOpen" OnAdvance="OnAdvance" OnCollapse="Collapse" />
+        }
+    };
+}
+
+@code {
+    /// <summary>Above this many entries (rows plus day headings) the list is virtualized.</summary>
+    private const int VirtualizeAbove = 150;
+
+    /// <summary>One line of the list: a day heading (Row is null) or a booking.</summary>
+    private sealed record ListEntry(string Key, DateOnly? Date, int GroupCount, BookingRow? Row);
+
+    private List<ListEntry> _entries = [];
     private int _count;
     private bool _compact, _timeAlone;
     private BookingColumns _columns = BookingColumns.All;
@@ -68,8 +88,11 @@ else
 
     [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
 
-    /// <summary>Every booking, with order info filled in. Filtering happens here.</summary>
+    /// <summary>The selected date's bookings (or every booking for all dates), with order info filled in. Filtering happens here.</summary>
     [Parameter, EditorRequired] public IReadOnlyList<BookingRow> Rows { get; set; } = [];
+
+    /// <summary>Global counts for the chips (they ignore the date and the search).</summary>
+    [Parameter, EditorRequired] public BookingStatusCounts StatusCounts { get; set; } = new(0, 0, 0, 0, 0, 0);
 
     [Parameter] public EventCallback<BookingRow> OnOpen { get; set; }
     [Parameter] public EventCallback<BookingRow> OnAdvance { get; set; }
@@ -88,7 +111,7 @@ else
     {
         get
         {
-            var c = BookingListing.Counts(Rows.ToList());
+            var c = StatusCounts;
             return
             [
                 new("all", $"All · {c.All}"),
@@ -112,9 +135,16 @@ else
     private void Refilter()
     {
         var options = Scope.ListOptions;
-        _groups = BookingListing.Apply(Rows, options, Calendar);
-        _count = BookingListing.ResultCount(_groups);
+        var groups = BookingListing.Apply(Rows, options, Calendar);
+        _count = BookingListing.ResultCount(groups);
         _timeAlone = BookingListing.IsGrouped(options) || options.Date is not null;
+
+        _entries = new List<ListEntry>(_count + groups.Count);
+        foreach (var group in groups)
+        {
+            if (group.Date is { } date) _entries.Add(new ListEntry($"day:{date:yyyy-MM-dd}", date, group.Rows.Count, null));
+            foreach (var row in group.Rows) _entries.Add(new ListEntry(row.BookingId, null, 0, row));
+        }
     }
 
     private void OnStatusChanged(string key)

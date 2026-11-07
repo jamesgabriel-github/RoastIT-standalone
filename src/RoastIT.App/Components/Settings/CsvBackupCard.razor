@@ -1,0 +1,71 @@
+@implements IDisposable
+@inject CsvBackupService Csv
+@inject ICsvFileShare CsvShare
+@inject IBusinessCalendar Calendar
+
+@* Settings → Data → Automatic CSV backup (settings spec §5, plan §10.6). *@
+<div class="set-card">
+    <div class="set-block">
+        <span class="set-title">Automatic CSV backup</span>
+        <span class="set-sub">One file, <span class="mono">@BookingsCsv.FileName</span>, in <b>@BookingsCsv.Folder</b>. It holds bookings with pickup from 24 hours before to 24 hours after each save, and is updated every hour while the app is open. Anyone with this unlocked phone can open it.</span>
+    </div>
+    @if (!Csv.IsSupported)
+    {
+        <div class="set-row"><span class="set-sub">@(DeviceInfo.Platform == DevicePlatform.Android ? "The automatic CSV backup needs Android 10 or later." : "The automatic CSV backup is saved on Android phones only.")</span></div>
+    }
+    else if (Csv.LastSaveFailed)
+    {
+        <button type="button" class="set-row" disabled="@_saving" @onclick="RetryAsync">
+            <span class="set-icon csv-failed"><Icon Name="warn" Size="18" /></span>
+            <span class="set-text">
+                <span class="set-title">@(_saving ? "Saving…" : "Last CSV save failed — tap to retry")</span>
+                @if (Csv.LastSave is { } last)
+                {
+                    <span class="set-sub">Last good save @BackupFormat.When(Calendar.ToLocal(last.SavedAtUtc))</span>
+                }
+            </span>
+        </button>
+    }
+    else if (Csv.LastSave is { } save)
+    {
+        <div class="set-row">
+            <span class="set-icon"><Icon Name="file" Size="18" /></span>
+            <span class="set-text">
+                <span class="set-title mono" style="font-size:13.5px;">@BookingsCsv.FileName</span>
+                <span class="set-sub">Saved @BackupFormat.When(Calendar.ToLocal(save.SavedAtUtc)) · @BookingFormat.BookingCount(save.Rows)<br />@BookingsCsv.WindowLabel(save.SavedAtUtc, Calendar)</span>
+            </span>
+            @if (CsvShare.CanShare)
+            {
+                <button type="button" class="icon-btn" aria-label="Open @BookingsCsv.FileName" @onclick="ShareAsync"><Icon Name="share" Size="18" /></button>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="set-row"><span class="set-sub">No CSV file yet. It's saved after the app has been open for a moment.</span></div>
+    }
+</div>
+@if (Csv.IsSupported)
+{
+    <p class="caption" style="padding:0 2px;">After reinstalling Roastline, the file may be saved as <span class="mono">roastline-bookings-48h (1).csv</span>. You can delete the old one in the Files app.</p>
+}
+
+@code {
+    private bool _saving;
+
+    protected override void OnInitialized() => Csv.Changed += OnCsvChanged;
+
+    private void OnCsvChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task RetryAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        try { await Task.Run(() => Csv.SaveAsync()); }
+        finally { _saving = false; }
+    }
+
+    private Task ShareAsync() => CsvShare.ShareAsync();
+
+    public void Dispose() => Csv.Changed -= OnCsvChanged;
+}

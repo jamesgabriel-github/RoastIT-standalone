@@ -20,6 +20,9 @@ public sealed class DatabaseInitializer(
 
     public async Task InitializeAsync(string appVersion, string? previousVersion, CancellationToken ct = default)
     {
+        // A force-close during an import swap leaves a marker: put the previous data back first (plan §10.5 step 8).
+        DatabaseFiles.RecoverInterruptedImport(dbPath, logger);
+
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
         if (File.Exists(dbPath))
@@ -56,7 +59,7 @@ public sealed class DatabaseInitializer(
     /// Records which app and schema wrote this database (import refuses newer schemas, plan §10.5).
     /// The schema version is the number of applied migrations, so it can't be forgotten.
     /// </summary>
-    private static async Task StampMetaAsync(RoastItDbContext db, string appVersion, CancellationToken ct)
+    internal static async Task StampMetaAsync(RoastItDbContext db, string appVersion, CancellationToken ct)
     {
         var schemaVersion = (await db.Database.GetAppliedMigrationsAsync(ct)).Count();
         await UpsertAsync(db, AppMeta.SchemaVersionKey, schemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);

@@ -1,8 +1,14 @@
 @page "/settings"
 @implements IDisposable
 @inject ThemeService Theme
+@inject PreferencesStore Preferences
+@inject DataTransferService Transfer
+@inject ToastService Toasts
+@inject IClock Clock
+@inject IBusinessCalendar Calendar
+@inject NavigationManager Nav
 
-@* Security and Appearance so far. Data (export/import, CSV) and Columns to show arrive in Phase 4. *@
+@* Settings (settings spec): Security, Data (export/import + CSV card), Appearance, Columns to show, version. *@
 <PageHeading Title="Settings" Subtitle="PIN, data, appearance, and bookings list" HasFab="false" />
 
 <section class="section" aria-labelledby="sec-security">
@@ -17,18 +23,74 @@
     <p class="caption" style="padding:0 2px;">Roastline locks itself whenever the app is reopened, and after 10 minutes without use. Your PIN is also asked before adding or editing menu items (every time), before recording a payment, waiving a remaining balance or cancelling a booking (remembered for 3 minutes), and every time you export or import data.</p>
 </section>
 
+<section class="section" aria-labelledby="sec-data">
+    <h2 class="section-title" id="sec-data">Data</h2>
+    @if (BackupReminder.IsDue(_lastExport, Clock.UtcNow))
+    {
+        <div class="backup-warn" role="status">
+            <Icon Name="warn" Size="18" />
+            <span>@BackupReminder.Text(_lastExport, Clock.UtcNow)</span>
+        </div>
+    }
+    <div class="set-card">
+        <button type="button" class="set-row" @onclick="OpenExport">
+            <span class="set-icon"><Icon Name="download" Size="18" /></span>
+            <span class="set-text">
+                <span class="set-title">Export data</span>
+                <span class="set-sub">@(_lastExport is { } at ? $"Last export: {BackupFormat.When(Calendar.ToLocal(at))}" : "Save a backup file of all bookings and the menu")</span>
+            </span>
+            <span class="set-trail"><Icon Name="chevron" Size="16" /></span>
+        </button>
+        <button type="button" class="set-row" @onclick="OpenImport">
+            <span class="set-icon"><Icon Name="upload" Size="18" /></span>
+            <span class="set-text"><span class="set-title">Import data</span><span class="set-sub">Replace this device's data with a backup file</span></span>
+            <span class="set-trail"><Icon Name="chevron" Size="16" /></span>
+        </button>
+    </div>
+    <CsvBackupCard />
+</section>
+
 <section class="section" aria-labelledby="sec-appearance">
     <h2 class="section-title" id="sec-appearance">Appearance</h2>
     <div class="set-card">
         <div class="set-block">
             <span class="set-title">Theme</span>
             <Segmented TValue="ThemeMode" AriaLabel="Theme" Options="_themes" Value="Theme.Mode" ValueChanged="Theme.SetMode" />
-            <p class="caption">Device matches your phone's light or dark setting and follows it when it changes.</p>
+            <p class="caption">@(Theme.Mode == ThemeMode.System
+                ? "Matching your phone's setting — switches between light and dark when the phone does."
+                : "Choose Device to match your phone’s light or dark setting.")</p>
         </div>
     </div>
 </section>
 
-<p class="version">Roastline · version @AppInfo.Current.VersionString</p>
+<section class="section" aria-labelledby="sec-columns">
+    <h2 class="section-title" id="sec-columns">Bookings list · Columns to show</h2>
+    <div class="set-card">
+        <div class="set-row">
+            <span class="set-text"><span class="set-title">Booking ID</span></span>
+            <span class="always">Always shown</span>
+        </div>
+        @foreach (var field in BookingColumnFields.All)
+        {
+            <div class="set-row">
+                <span class="set-text"><span class="set-title">@field.Label</span></span>
+                <Switch Checked="@field.Get(_columns)" AriaLabel="@($"Show {field.Label}")" CheckedChanged="on => SetColumn(field, on)" />
+            </div>
+        }
+    </div>
+    <div class="set-foot">
+        <span class="caption">@BookingColumnFields.HiddenCaption(_columns)</span>
+        @if (BookingColumnFields.HiddenCount(_columns) > 0)
+        {
+            <button type="button" class="link-btn" @onclick="ShowAllColumns">Show all</button>
+        }
+    </div>
+</section>
+
+<p class="version">Roastline · version @AppInfo.Current.VersionString (build @AppInfo.Current.BuildString)</p>
+
+<ExportSheet Open="_exportOpen" OnClose="CloseExport" OnExported="OnExported" />
+<ImportSheet Open="_importOpen" OnClose="CloseImport" OnImported="OnImportedAsync" />
 
 @code {
     private static readonly IReadOnlyList<SegmentedOption<ThemeMode>> _themes =
@@ -38,9 +100,58 @@
         new(ThemeMode.System, "Device", "device"),
     ];
 
-    protected override void OnInitialized() => Theme.Changed += OnThemeChanged;
+    private BookingColumns _columns = BookingColumns.All;
+    private DateTime? _lastExport;
+    private bool _exportOpen, _importOpen;
+
+    protected override void OnInitialized()
+    {
+        Theme.Changed += OnThemeChanged;
+        _columns = Preferences.BookingColumns;
+        _lastExport = Transfer.LastExportAt;
+    }
 
     private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    // ---- Columns to show: saved on every tap (settings spec §7) ----
+
+    private void SetColumn(BookingColumnField field, bool on)
+    {
+        _columns = field.Set(_columns, on);
+        Preferences.BookingColumns = _columns;
+    }
+
+    private void ShowAllColumns()
+    {
+        _columns = BookingColumns.All;
+        Preferences.BookingColumns = _columns;
+    }
+
+    // ---- Export / Import ----
+
+    private void OpenExport() => _exportOpen = true;
+
+    private void CloseExport() => _exportOpen = false;
+
+    private void OnExported(ExportedBackup exported)
+    {
+        _exportOpen = false;
+        _lastExport = Transfer.LastExportAt;
+        Toasts.Show(BackupMessages.BackupSaved(exported.FileName), ToastDuration.Settings);
+    }
+
+    private void OpenImport() => _importOpen = true;
+
+    private void CloseImport() => _importOpen = false;
+
+    private async Task OnImportedAsync()
+    {
+        _importOpen = false;
+        Toasts.Show(BackupMessages.Imported, ToastDuration.Settings);
+        StateHasChanged();
+        await Task.Delay(1800);
+        Nav.NavigateTo("bookings"); // the app stays unlocked: the PIN didn't change
+    }
 
     public void Dispose() => Theme.Changed -= OnThemeChanged;
 }

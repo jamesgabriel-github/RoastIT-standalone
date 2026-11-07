@@ -25,6 +25,7 @@
     <Compile Include="..\..\src\RoastIT.App\Services\ToastService.cs" Link="Linked\ToastService.cs" />
     <Compile Include="..\..\src\RoastIT.App\Services\ThemeMode.cs" Link="Linked\ThemeMode.cs" />
     <Compile Include="..\..\src\RoastIT.App\Services\PinPromptService.cs" Link="Linked\PinPromptService.cs" />
+    <Compile Include="..\..\src\RoastIT.App\Services\ExternalActivityGuard.cs" Link="Linked\ExternalActivityGuard.cs" />
   </ItemGroup>
 
   <ItemGroup>

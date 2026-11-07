@@ -1,0 +1,2356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Roastline — Bookings</title>
+<script>
+  // Apply the saved theme before first paint (Settings → Appearance): 'light' (default),
+  // 'dark', or 'system' (match the device's light/dark setting, and follow it live).
+  // In the real app this comes from MAUI Preferences. Storage can be unavailable — light.
+  (function () {
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function apply() {
+      var t = 'light';
+      try { t = localStorage.getItem('roastline.theme') || 'light'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'system' && !!mq && mq.matches);
+      if (dark) document.documentElement.dataset.theme = 'dark';
+      else delete document.documentElement.dataset.theme;
+    }
+    apply();
+    try { if (mq) mq.addEventListener('change', apply); } catch (e) {}
+    window.__applyTheme = apply;
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* ================= Shared mobile shell (same block in menu-prototype.html and settings-prototype.html) ================= */
+  :root {
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Consolas, monospace;
+    --bg: #EEEDE6;
+    --surface: #FFFFFF;
+    --surface-2: #F6F4EF;
+    --border: #E1DDD1;
+    --fg: #221E19;
+    --fg-muted: #847C6D;
+    --accent: #A8471F;
+    --accent-fg: #FFFFFF;
+    --status-pending: #8A8275;
+    --status-cooking: #D9731E;
+    --status-cooked: #2E8B52;
+    --status-completed: #6B7280;
+    --status-cancelled: #C1392B;
+    --nav-h: 60px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15120E;
+    --surface: #1F1B16;
+    --surface-2: #29241E;
+    --border: #3A3229;
+    --fg: #F2EDE4;
+    --fg-muted: #A79E8F;
+    --accent: #C9612F;
+    --accent-fg: #FFFFFF;
+    --status-pending: #A39A8A;
+    --status-cooking: #E8893A;
+    --status-cooked: #4CAF72;
+    --status-completed: #959CA8;
+    --status-cancelled: #E25B4D;
+  }
+  :root[data-theme="dark"] .backdrop, :root[data-theme="dark"] .dialog-backdrop { background: rgba(0,0,0,0.6); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: var(--font-body); font-size: 14px; line-height: 1.45; color: var(--fg);
+    -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
+  }
+  body.no-scroll { overflow: hidden; }
+  button, input, select, textarea { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::placeholder { color: var(--fg-muted); opacity: 1; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--fg-muted); }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  .app { min-height: 100vh; padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 84px); }
+  .topbar {
+    position: sticky; top: 0; z-index: 20; padding-top: var(--safe-top);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 56px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .topbar-titles { display: flex; flex-direction: column; min-width: 0; }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  .topbar .sub { font-size: 12px; color: var(--fg-muted); }
+  .content { max-width: 760px; margin: 0 auto; padding: 14px 16px 0; display: flex; flex-direction: column; gap: 12px; }
+
+  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom); }
+  .bottomnav-inner { max-width: 760px; margin: 0 auto; display: flex; }
+  .navitem {
+    flex: 1; min-height: var(--nav-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 11.5px; font-weight: 600; color: var(--fg-muted); text-decoration: none; background: none; border: none; padding: 6px 4px;
+  }
+  .navitem.active { color: var(--accent); }
+  .fab {
+    position: fixed; z-index: 25;
+    right: max(16px, calc((100vw - 760px) / 2 + 16px));
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 14px);
+    height: 52px; padding: 0 20px 0 16px; border-radius: 16px; border: none;
+    background: var(--accent); color: var(--accent-fg); font-size: 15px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 6px 18px rgba(168,71,31,0.35), 0 2px 4px rgba(34,30,25,0.12);
+  }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 16px;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 14px; font-weight: 600;
+    white-space: nowrap; touch-action: manipulation;
+  }
+  .btn:active { background: var(--surface-2); }
+  .btn-sm { height: 38px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .btn-primary:active { background: color-mix(in srgb, var(--accent) 85%, black); }
+  .btn-danger { color: var(--status-cancelled); border-color: color-mix(in srgb, var(--status-cancelled) 45%, var(--border)); }
+  .btn-dashed { border-style: dashed; background: transparent; color: var(--fg-muted); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 10px; border: 1px solid transparent; background: transparent; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .icon-btn:active { background: var(--surface-2); }
+
+  .search { position: relative; }
+  .search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--fg-muted); }
+  .input { width: 100%; height: 46px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); padding: 0 12px; font-size: 16px; }
+  .search .input { padding-left: 40px; }
+  textarea.input { height: auto; min-height: 96px; padding: 12px; resize: vertical; line-height: 1.45; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+  .field-label .opt { font-weight: 400; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px; }
+  .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .list-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
+  .list-meta-actions { display: flex; gap: 6px; min-width: 0; }
+  .meta-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; font-weight: 600; white-space: nowrap; min-width: 0;
+  }
+  .meta-btn span { overflow: hidden; text-overflow: ellipsis; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .pill-dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
+  .empty { border: 1px dashed var(--border); border-radius: 12px; padding: 36px 16px; text-align: center; color: var(--fg-muted); font-size: 13.5px; }
+
+  .backdrop { position: fixed; inset: 0; background: rgba(20,16,12,0.42); z-index: 50; animation: fade 0.15s ease; }
+  .sheet { position: fixed; z-index: 51; background: var(--surface); display: flex; flex-direction: column; box-shadow: 0 -8px 30px rgba(20,16,12,0.18); }
+  .sheet.full { inset: 0; animation: slideUp 0.2s ease; }
+  .sheet.bottom { left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 18px 18px 0 0; animation: slideUp 0.2s ease; }
+  .sheet.top-layer { z-index: 61; }
+  .backdrop.top-layer { z-index: 60; }
+  .sheet-grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--border); margin: 8px auto 0; flex-shrink: 0; }
+  .sheet-header { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; min-height: 56px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .sheet.full .sheet-header { padding-top: calc(6px + var(--safe-top)); padding-left: 6px; }
+  .sheet-title { font-size: 16px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px; display: flex; flex-direction: column; gap: 16px; -webkit-overflow-scrolling: touch; }
+  .sheet.bottom .sheet-body { padding-bottom: calc(16px + var(--safe-bottom)); }
+  .sheet-footer { flex-shrink: 0; display: flex; gap: 10px; padding: 12px 16px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
+  .sheet-footer .btn { flex: 1; }
+  @media (min-width: 768px) {
+    .sheet.full { left: auto; width: 440px; border-left: 1px solid var(--border); animation: slideLeft 0.2s ease; }
+    .sheet.full .sheet-header { padding-top: 6px; }
+    .sheet.bottom { left: 50%; right: auto; bottom: 24px; width: 420px; transform: translateX(-50%); border-radius: 18px; animation: fade 0.15s ease; }
+    .sheet.bottom .sheet-grabber { display: none; }
+  }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { transform: translateY(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+  @keyframes slideLeft { from { transform: translateX(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+  .menu-row {
+    display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 6px; border-radius: 10px; width: 100%;
+    color: var(--fg); text-decoration: none; font-size: 15px; font-weight: 600; background: none; border: none; text-align: left;
+  }
+  .menu-row:active { background: var(--surface-2); }
+  .menu-row .trail { margin-left: auto; color: var(--fg-muted); display: flex; }
+  .menu-row.selected { color: var(--accent); }
+  .group-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); margin: 0; }
+  .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .seg { height: 38px; border-radius: 8px; border: none; background: transparent; font-size: 13.5px; font-weight: 600; color: var(--fg-muted); }
+  .seg.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(34,30,25,0.14); }
+  .caption { font-size: 12.5px; color: var(--fg-muted); margin: 0; }
+  .form-error { font-size: 13px; color: var(--status-cancelled); font-weight: 600; margin: 0; }
+  .switch { position: relative; width: 50px; height: 30px; border-radius: 999px; border: none; background: var(--border); flex-shrink: 0; padding: 0; }
+  .switch.on { background: var(--accent); }
+  .switch span { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: left 0.15s ease; }
+  .switch.on span { left: 23px; }
+  .toggle-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 80;
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 80px);
+    background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+    box-shadow: 0 8px 20px rgba(34,30,25,0.22); max-width: calc(100vw - 32px); animation: fade 0.15s ease;
+  }
+  .toast.over-footer { bottom: calc(var(--safe-bottom) + 84px); }
+  /* ================= end shared shell ================= */
+
+  /* ---- Bookings page ---- */
+  .datebar { display: flex; align-items: stretch; gap: 8px; }
+  .all-chip { flex-shrink: 0; width: 48px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 700; }
+  .all-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .strip { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; padding: 7px 2px 3px; margin: -7px 0 -3px; scroll-snap-type: x proximity; }
+  .day {
+    position: relative; flex: 0 0 46px; height: 56px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; scroll-snap-align: start;
+  }
+  .day.today { border-color: var(--accent); }
+  .day.selected { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .day-wd { font-size: 10px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.75; }
+  .day-num { font-family: var(--font-mono); font-size: 16px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .day-badge {
+    position: absolute; top: -6px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-fg); font-size: 9.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  .day.selected .day-badge { background: var(--accent-fg); color: var(--accent); }
+  .strip-arrow { scroll-snap-align: start; flex: 0 0 34px; height: 56px; border-radius: 12px; border: 1px dashed var(--border); background: transparent; color: var(--fg-muted); display: flex; align-items: center; justify-content: center; }
+  .strip-arrow[disabled] { opacity: 0.35; cursor: not-allowed; }
+  .cal-btn { flex-shrink: 0; width: 48px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); display: flex; align-items: center; justify-content: center; }
+  .cal-btn.has-date { border-color: var(--accent); color: var(--accent); }
+  .scope { font-size: 13px; color: var(--fg-muted); }
+  .scope strong { color: var(--fg); }
+
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .card-title { margin: 0; font-size: 14.5px; font-weight: 700; }
+  .card-cap { font-size: 12px; color: var(--fg-muted); }
+  .kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .kpi:first-child { grid-column: 1 / -1; }
+  .kpi-label { font-size: 12px; color: var(--fg-muted); font-weight: 500; }
+  .kpi-value { font-family: var(--font-mono); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  @media (min-width: 640px) {
+    .kpi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .kpi:first-child { grid-column: auto; }
+    .kpi-value { font-size: 17px; }
+  }
+  .stack-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .mix-list { display: flex; flex-direction: column; gap: 12px; }
+  .mix-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; align-items: center; font-size: 13.5px; }
+  .mix-bar { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .mix-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+  .bal-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+  .bal-row:first-child { border-top: none; padding-top: 0; }
+  .bal-name { font-weight: 600; font-size: 14px; }
+  .kchart { display: flex; align-items: flex-start; min-width: 0; }
+  .kchart svg { display: block; flex: none; }
+  .kchart-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; padding-bottom: 6px; }
+  .kchart-cap { font-size: 10.5px; color: var(--fg-muted); text-align: center; margin-top: 2px; }
+  .kbar { fill: var(--status-cooking); opacity: 0.78; }
+  .kbar.sel { opacity: 1; fill: var(--accent); }
+  .khit { fill: transparent; cursor: pointer; }
+  .ktick { font-family: var(--font-mono); font-size: 10.5px; fill: var(--fg-muted); }
+  .kcount { font-family: var(--font-mono); font-size: 11px; font-weight: 600; fill: var(--fg); }
+  .kgrid { stroke: var(--border); stroke-width: 1; }
+  .kaxis { stroke: var(--fg-muted); stroke-width: 1; }
+  .know { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+  .kreadout { margin-top: 8px; font-size: 12.5px; color: var(--fg-muted); min-height: 18px; }
+  .kreadout b { color: var(--fg); }
+
+  .bcard-list { display: flex; flex-direction: column; gap: 10px; }
+  .group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px 0; font-size: 13px; font-weight: 700; }
+  .group-head .muted { font-weight: 500; font-size: 12.5px; }
+  .today-pill { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); margin-left: 6px; vertical-align: 1px; }
+  .bcard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
+  .bcard:active { background: var(--surface-2); }
+  .bcard-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .bid { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--fg-muted); }
+  .bcard-product { font-size: 15px; font-weight: 700; }
+  .bcard-product .muted { font-weight: 500; font-size: 13px; }
+  .bcard-line { display: flex; align-items: center; gap: 7px; font-size: 13px; min-width: 0; }
+  .bcard-line svg { color: var(--fg-muted); flex-shrink: 0; }
+  .bcard-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bcard-money { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+  .bcard-money b { font-family: var(--font-mono); font-weight: 600; }
+  .was { color: var(--fg-muted); font-size: 12px; text-decoration: line-through; font-family: var(--font-mono); }
+  .bcard-actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
+  .bcard-actions .btn { flex: 1; }
+  .bcard-list.compact { gap: 6px; }
+  .crow {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 0 12px 0 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; text-align: left;
+  }
+  .crow:active { background: var(--surface-2); }
+  .crow .bid { color: var(--fg); font-size: 14px; flex: 1; min-width: 0; }
+  .crow-time { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+  .crow-time svg, .crow-chev { color: var(--fg-muted); flex-shrink: 0; display: flex; }
+  .bcard.expanded { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .bcard-top-right { display: flex; align-items: center; gap: 4px; }
+  /* "1 of 2" tag after the booking ID for multi-booking orders */
+  .order-tag {
+    display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
+    font-family: var(--font-body); font-size: 11px; font-weight: 600; color: var(--fg-muted);
+    background: var(--surface-2); border: 1px solid var(--border); white-space: nowrap;
+  }
+  .collapse-btn { width: 32px; height: 32px; margin: -6px -8px -6px 0; border: none; background: none; border-radius: 8px; color: var(--fg-muted); display: inline-flex; align-items: center; justify-content: center; }
+  .collapse-btn:active { background: var(--surface-2); }
+  .view-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); flex-shrink: 0; }
+  .view-toggle button { width: 34px; height: 30px; border: none; border-radius: 7px; background: transparent; color: var(--fg-muted); display: inline-flex; align-items: center; justify-content: center; }
+  .view-toggle button.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(34,30,25,0.14); }
+
+  .dsec-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); margin: 0 0 6px; }
+  .drow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 14px; min-height: 40px; }
+  .drow:first-of-type { border-top: none; }
+  .drow .k { color: var(--fg-muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .drow .v { font-weight: 600; text-align: right; }
+  .drow.big { font-size: 16px; }
+  .tel { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .link-row { display: flex; justify-content: flex-end; margin-top: -4px; }
+  .link-btn { background: none; border: none; padding: 6px 2px; color: var(--accent); font-weight: 600; font-size: 13px; min-height: 36px; }
+  .text-btn { background: none; border: none; padding: 4px 6px; font-size: 12.5px; font-weight: 600; color: var(--accent); min-height: 32px; }
+  .inline-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .inline-row { display: flex; gap: 8px; }
+  .inline-row > * { flex: 1; min-width: 0; }
+  .writeoff {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding: 10px 12px; border-radius: 12px; font-size: 13px;
+    background: color-mix(in srgb, var(--status-cooking) 9%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--status-cooking) 35%, var(--border));
+  }
+  .sib-list { display: flex; flex-direction: column; gap: 8px; }
+  .sib { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 48px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); text-align: left; }
+  .sib-text { display: flex; flex-direction: column; min-width: 0; }
+  .sib-text .bid { font-size: 12px; }
+  .sib-text span:last-child { font-weight: 600; font-size: 13.5px; }
+
+  .money-input { position: relative; display: block; }
+  .money-input .prefix { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--fg-muted); font-weight: 600; pointer-events: none; }
+  .money-input .input { padding-left: 28px; }
+  .line-card { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; background: var(--surface-2); }
+  .line-head { display: flex; justify-content: space-between; align-items: center; }
+  .prod-scroll { display: flex; gap: 8px; overflow-x: auto; margin: 0 -14px; padding: 2px 14px; }
+  .prod-card { flex: 0 0 136px; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); text-align: left; }
+  .prod-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+  .prod-name { font-size: 13.5px; font-weight: 700; }
+  .prod-meta { font-size: 11.5px; color: var(--fg-muted); }
+  .prod-price { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .line-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .stepper { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  .stepper button { width: 44px; height: 44px; border: none; background: none; font-size: 20px; font-weight: 600; }
+  .stepper button:active { background: var(--surface-2); }
+  .stepper input {
+    width: 52px; height: 44px; border: none; border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-radius: 0;
+    text-align: center; font-family: var(--font-mono); font-size: 16px; font-weight: 600; background: var(--surface); -moz-appearance: textfield;
+  }
+  .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .subtotal { text-align: right; }
+  .subtotal .mono { font-weight: 700; font-size: 15px; display: block; }
+  .sum-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .sum-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; }
+  .sum-row .mono { font-weight: 700; }
+  .sum-row.big { font-size: 16px; font-weight: 700; }
+
+  .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .cal-head .icon-btn { border-color: var(--border); }
+  .cal-head .icon-btn[disabled] { opacity: 0.35; cursor: not-allowed; }
+  .cal-label { font-weight: 700; font-size: 15px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-wd { font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: var(--fg-muted); padding-bottom: 4px; }
+  .cal-cell { position: relative; height: 42px; border-radius: 10px; border: 1.5px solid transparent; background: none; font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+  .cal-cell.today { border-color: var(--accent); }
+  .cal-cell.selected { background: var(--accent); color: var(--accent-fg); }
+  .cal-cell[disabled] { color: var(--fg-muted); opacity: 0.4; cursor: not-allowed; }
+  .cal-dot { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .cal-cell.selected .cal-dot { background: var(--accent-fg); }
+  .checkrow { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 15px; padding: 0 4px; }
+  .checkrow input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; flex-shrink: 0; }
+  .checkrow.locked { color: var(--fg-muted); }
+
+  /* ---- New booking: pickup date & time ---- */
+  .pickup-card { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 14px; }
+  .pk-part { display: flex; flex-direction: column; gap: 8px; }
+  .pk-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--fg-muted); margin: 0; }
+  .pk-label svg { flex-shrink: 0; }
+  .date-btn {
+    width: 100%; min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 15.5px; font-weight: 700; text-align: left;
+  }
+  .date-btn:active { background: var(--surface-2); }
+  .date-btn .cal-ico { color: var(--accent); display: flex; flex-shrink: 0; }
+  .date-btn .trail { margin-left: auto; color: var(--fg-muted); display: flex; flex-shrink: 0; }
+  .quick-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .quick-row .chip { height: 34px; }
+  .time-row { display: flex; align-items: center; gap: 8px; }
+  .hour-select { position: relative; flex: 0 0 86px; }
+  .hour-select select { -webkit-appearance: none; appearance: none; padding: 0 30px 0 14px; font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+  .hour-select .caret { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--fg-muted); display: flex; }
+  .time-sep { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--fg-muted); line-height: 1; }
+  .minute-input { flex: 0 0 64px; width: 64px; padding: 0 6px; text-align: center; font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+  .input.invalid { border-color: var(--status-cancelled); }
+  .time-row .segmented { flex: 1; min-width: 0; }
+  .time-row .seg { height: 38px; }
+  .pk-summary { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 13.5px; }
+  .pk-summary-main { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .pk-summary-main svg { color: var(--status-cooked); flex-shrink: 0; }
+  .pk-warn { font-size: 12.5px; font-weight: 600; color: var(--status-cooking); }
+
+  .dialog-backdrop { position: fixed; inset: 0; background: rgba(20,16,12,0.42); z-index: 70; animation: fade 0.15s ease; }
+  .dialog {
+    position: fixed; z-index: 71; left: 16px; right: 16px; top: 50%; transform: translateY(-50%);
+    max-width: 360px; margin: 0 auto; background: var(--surface); border-radius: 18px; padding: 20px;
+    display: flex; flex-direction: column; gap: 10px; box-shadow: 0 20px 50px rgba(20,16,12,0.3);
+  }
+  .dialog h2 { margin: 0; font-size: 17px; }
+  .dialog p { margin: 0; color: var(--fg-muted); }
+  .dialog-actions { display: flex; gap: 10px; margin-top: 6px; }
+  .dialog-actions .btn { flex: 1; }
+
+  /* Booking created popup — stays open until the user taps Done */
+  .created-head { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+  .created-icon { width: 44px; height: 44px; border-radius: 50%; background: color-mix(in srgb, var(--status-cooked) 14%, var(--surface)); color: var(--status-cooked); display: flex; align-items: center; justify-content: center; }
+  .created-ids { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; margin: 4px 0; }
+  .created-id {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .created-id .mono { font-size: 18px; font-weight: 600; color: var(--fg); letter-spacing: 0.02em; }
+  .created-id .prod { font-size: 12.5px; color: var(--fg-muted); text-align: right; }
+  .created-id.single { justify-content: center; flex-direction: column; gap: 2px; padding: 14px; }
+  .created-id.single .mono { font-size: 24px; }
+  .created-meta { font-size: 13px; color: var(--fg-muted); text-align: center; }
+
+  /* ================= PIN confirmation (same block in menu- and bookings-prototype.html) ================= */
+  .backdrop.pin-layer { z-index: 90; }
+  .sheet.pin-layer { z-index: 91; }
+  .pin-body { padding: 8px 20px calc(20px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .pin-head { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pin-icon { width: 40px; height: 40px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+  .pin-head h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .pin-detail { margin: 0; font-size: 13.5px; color: var(--fg-muted); max-width: 300px; }
+  .pin-dots { display: flex; justify-content: center; align-items: center; gap: 14px; height: 22px; }
+  .pin-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--fg); }
+  .pin-hint { color: var(--fg-muted); font-size: 13px; }
+  .pin-shake { animation: pinShake 0.35s; }
+  @keyframes pinShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+  .pin-msg { min-height: 18px; text-align: center; font-size: 13px; font-weight: 600; color: var(--status-cancelled); }
+  .pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 300px; margin: 0 auto; }
+  .pin-key {
+    height: 56px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+    font-family: var(--font-mono); font-size: 22px; font-weight: 600; display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+  }
+  .pin-key:active { background: var(--surface-2); }
+  .pin-key.fn { font-family: var(--font-body); background: transparent; border-color: transparent; color: var(--fg-muted); }
+  .pin-key.ok { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-family: var(--font-body); font-size: 15px; font-weight: 700; }
+  .pin-key[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .pin-cancel { width: 100%; max-width: 300px; margin: 0 auto; }
+  /* ================= end PIN confirmation ================= */
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================================
+   Roastline — Bookings page, standalone mobile prototype
+   -------------------------------------------------------------------------------------
+   Same data model, view-model math and rules as the web bookings-prototype.html /
+   bookings-page-spec.md, re-laid-out for a phone:
+
+   - Top bar + bottom navigation (Bookings · Menu · Settings) + floating "New booking".
+   - Date strip: "All" + a swipeable 10-day window with prev/next-week ends + calendar
+     bottom sheet. ±6-month schedulable window still enforced inside selectDate().
+   - Dashboard / List as a segmented control; both read the same selectedDate.
+   - Booking list = cards instead of a table, with a Detailed / Compact switch. Compact shows
+     only booking ID + pickup time; tapping a row expands it into the full card. Which fields a card shows (was: the Columns
+     menu) is now chosen in Settings → "Columns to show".
+     Tapping a card opens the detail; the card's quick-advance button still asks for
+     confirmation, the detail sheet's advance button is still immediate.
+   - Automatic CSV backup: one file, "roastline-bookings-48h.csv" — bookings with pickup from
+     24 h before to 24 h after the save, rewritten hourly while the app is open. Shown in Settings.
+   - Recording a payment, "Discount remaining balance" and cancelling ask for the PIN first; a
+     correct PIN is remembered for 3 minutes for these Bookings actions.
+   - Cancelling always cancels the whole order (all its items), and only while none of them
+     is cooked or completed.
+   - Detail and New booking open as full-screen sheets (side panel on tablets).
+   - New booking's pickup is split into a Date part and a Time part. Date: a button that
+     opens the calendar sheet (dots = days with bookings) plus Today / Tomorrow chips.
+     Time: hour combo box (1–12) : minutes typed as 00–59 : AM/PM (minutes are tidied on
+     leaving the field: "7" → 07, "75" → 59).
+     A summary line reads the pickup back in words, and warns if the time has passed.
+   - Creating a booking shows a "Booking created" popup with the new booking ID(s). It has
+     no timer and tapping outside doesn't close it: the user closes it with Done (or Back).
+   - Booking cards show the ORDER's money ("Order ₱4,400 · Paid ₱2,000"), so a booking
+     from a multi-booking order carries a "1 of 2" tag after its ID (numbered by booking
+     ID, cancelled included) to show the figures are shared with other cards.
+   - Kitchen load (D31): a fixed 12 AM – 11:59 PM axis for the selected date, 40 px per
+     hour with a label under every hour, so the plot scrolls sideways while the y-axis
+     labels stay put. Today shows a dashed "now" line and opens centred on it; other
+     dates open an hour before the first busy bar. Tap a bar to read its time window
+     (no hover on touch).
+
+   Rendering: full re-render on clicks (scroll positions preserved); typing only
+   redraws the regions that depend on it, so the keyboard never closes mid-typing.
+   ===================================================================================== */
+
+  // ---------------------------------------------------------------------------------
+  // Constants & data model (unchanged from the web prototype)
+  // ---------------------------------------------------------------------------------
+  const TODAY = '2026-10-09';
+  const TODAY_YYMMDD = '261009';
+
+  const PRODUCTS = [
+    { name: 'Lechon Head',    cookingTimeMin: 180, price: 1200 },
+    { name: 'Lechon Turkey',  cookingTimeMin: 150, price: 4500 },
+    { name: 'Lechon Chicken', cookingTimeMin: 30,  price: 750 },
+    { name: 'Lechon Belly',   cookingTimeMin: 120, price: 2200 },
+    { name: 'Liempo',         cookingTimeMin: 45,  price: 650 }
+  ];
+  const PRODUCT_BY_NAME = {};
+  PRODUCTS.forEach((p) => { PRODUCT_BY_NAME[p.name] = p; });
+  const PRODUCT_NAMES = PRODUCTS.map((p) => p.name);
+
+  const STATUS_META = {
+    pending:   { label: 'Pending',   css: 'var(--status-pending)' },
+    cooking:   { label: 'Cooking',   css: 'var(--status-cooking)' },
+    cooked:    { label: 'Cooked',    css: 'var(--status-cooked)' },
+    completed: { label: 'Completed', css: 'var(--status-completed)' },
+    cancelled: { label: 'Cancelled', css: 'var(--status-cancelled)' }
+  };
+  const STATUS_ORDER = ['pending', 'cooking', 'cooked', 'completed', 'cancelled'];
+  const NEXT_STATUS = { pending: 'cooking', cooking: 'cooked', cooked: 'completed' };
+  const NEXT_ACTION_LABEL = { pending: 'Start cooking', cooking: 'Mark cooked', cooked: 'Mark completed' };
+  const STATUS_CHIP_ORDER = ['all', 'pending', 'cooking', 'cooked', 'completed', 'cancelled'];
+
+  const SORT_FIELDS = [
+    { key: 'pickup',      label: 'Pickup time',  ascLabel: 'Soonest first',       descLabel: 'Latest first' },
+    { key: 'status',      label: 'Status',       ascLabel: 'Pending → Completed', descLabel: 'Completed → Pending' },
+    { key: 'bookingId',   label: 'Booking ID',   ascLabel: 'A → Z',                descLabel: 'Z → A' },
+    { key: 'customer',    label: 'Customer',     ascLabel: 'A → Z',                descLabel: 'Z → A' },
+    { key: 'product',     label: 'Product',      ascLabel: 'A → Z',                descLabel: 'Z → A' },
+    { key: 'cookingTime', label: 'Cooking time', ascLabel: 'Shortest first',       descLabel: 'Longest first' }
+  ];
+  const SORT_FIELD_BY_KEY = {};
+  SORT_FIELDS.forEach((f) => { SORT_FIELD_BY_KEY[f.key] = f; });
+
+  // Optional fields shown on each booking card (was: table columns). Chosen in Settings →
+  // "Columns to show" and saved per device (MAUI Preferences in the real app).
+  const COLUMN_FIELDS = [
+    { key: 'customer',    label: 'Customer' },
+    { key: 'product',     label: 'Product' },
+    { key: 'cookingTime', label: 'Cooking time' },
+    { key: 'pickup',      label: 'Pickup' },
+    { key: 'status',      label: 'Status' },
+    { key: 'total',       label: 'Order total' },
+    { key: 'paid',        label: 'Order paid' }
+  ];
+
+  // ---------------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------------
+  function makeBookingId(seq) { return TODAY_YYMMDD + '-' + String(seq).padStart(3, '0'); }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function addDays(dateStr, delta) {
+    const p = dateStr.split('-');
+    const dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10) + delta);
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  function addMonths(dateStr, delta) {
+    const p = dateStr.split('-');
+    const dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1 + delta, parseInt(p[2], 10));
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+  const SCHEDULE_RANGE_MONTHS = 6;
+  const MIN_SCHEDULABLE_DATE = addMonths(TODAY, -SCHEDULE_RANGE_MONTHS);
+  const MAX_SCHEDULABLE_DATE = addMonths(TODAY, SCHEDULE_RANGE_MONTHS);
+  function isDateSchedulable(d) { return d >= MIN_SCHEDULABLE_DATE && d <= MAX_SCHEDULABLE_DATE; }
+  function clampStripStart(d) {
+    const maxStart = addDays(MAX_SCHEDULABLE_DATE, -9);
+    if (d < MIN_SCHEDULABLE_DATE) return MIN_SCHEDULABLE_DATE;
+    if (d > maxStart) return maxStart;
+    return d;
+  }
+  function clampMonth(ym) {
+    const minM = MIN_SCHEDULABLE_DATE.slice(0, 7), maxM = MAX_SCHEDULABLE_DATE.slice(0, 7);
+    if (ym < minM) return minM;
+    if (ym > maxM) return maxM;
+    return ym;
+  }
+  function weekdayOf(d) {
+    const p = d.split('-');
+    return WEEKDAYS[new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)).getDay()];
+  }
+  function formatDuration(min) {
+    if (min < 60) return min + ' min';
+    const h = Math.floor(min / 60), m = min % 60;
+    return h + ' hr' + (m ? ' ' + m + ' min' : '');
+  }
+  function dateOnly(iso) { return iso ? iso.slice(0, 10) : ''; }
+  function formatDate(d) {
+    if (!d) return '—';
+    const p = d.split('-');
+    return MONTHS[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10);
+  }
+  function formatDateShort(d) {
+    if (!d) return '—';
+    const p = d.split('-');
+    return MONTHS[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + parseInt(p[0], 10);
+  }
+  function formatDateHeader(d) {
+    if (!d) return 'No date set';
+    const p = d.split('-');
+    const y = parseInt(p[0], 10), m = parseInt(p[1], 10), day = parseInt(p[2], 10);
+    return WEEKDAYS[new Date(y, m - 1, day).getDay()] + ', ' + MONTHS[m - 1] + ' ' + day + ', ' + y;
+  }
+  function formatScopeDate(d) {
+    if (d === TODAY) return 'Today';
+    if (d === addDays(TODAY, -1)) return 'Yesterday';
+    if (d === addDays(TODAY, 1)) return 'Tomorrow';
+    return formatDateHeader(d);
+  }
+  function formatTime(iso) {
+    if (!iso) return '—';
+    const t = iso.split('T')[1];
+    if (!t) return '—';
+    const bits = t.split(':');
+    let h = parseInt(bits[0], 10);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return h + ':' + bits[1] + ' ' + ampm;
+  }
+  function formatDateTime(iso) { return iso ? formatDate(dateOnly(iso)) + ' · ' + formatTime(iso) : '—'; }
+  function formatMoney(n) { return '₱' + Math.round(n).toLocaleString('en-PH'); }
+  function customerLabel(order) {
+    if (!order) return '—';
+    return order.customer && order.customer.trim() ? order.customer : 'Walk-in customer';
+  }
+  function netTotal(order) {
+    if (!order) return 0;
+    return order.totalAmount - Math.min(order.discountAmount || 0, order.totalAmount);
+  }
+  function orderBalance(order) { return order ? Math.max(0, netTotal(order) - order.amountPaid) : 0; }
+  function parseDateTime(iso) {
+    const parts = iso.split('T');
+    const d = parts[0].split('-');
+    const t = (parts[1] || '00:00').split(':');
+    return new Date(parseInt(d[0], 10), parseInt(d[1], 10) - 1, parseInt(d[2], 10), parseInt(t[0], 10), parseInt(t[1], 10));
+  }
+  // Keep every kitchen-load value on a "local minutes" axis (see bookings-page-spec §4.3).
+  // In the real app this conversion lives in IBusinessCalendar (C#).
+  function toAbsMinutes(iso) {
+    const dt = parseDateTime(iso);
+    return Math.round(dt.getTime() / 60000) - dt.getTimezoneOffset();
+  }
+  function formatClockFromMinutes(absMin) {
+    const total = ((Math.round(absMin) % 1440) + 1440) % 1440;
+    let h = Math.floor(total / 60);
+    const m = total % 60;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return h + ':' + pad2(m) + ' ' + ampm;
+  }
+  // "5 PM": the kitchen chart's hour ticks.
+  function formatHourFromMinutes(absMin) {
+    let h = Math.floor((((Math.round(absMin) % 1440) + 1440) % 1440) / 60);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return h + ' ' + ampm;
+  }
+  function nowOnToday() {
+    const now = new Date();
+    return TODAY + 'T' + pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+  }
+  function esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function icon(paths, size) {
+    size = size || 16;
+    return '<svg viewBox="0 0 20 20" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+  }
+  const ICONS = {
+    flame: '<path d="M10 2.5c2 3 4.5 5 4.5 8.5a4.5 4.5 0 01-9 0c0-1.3.5-2.2 1.2-3.1.2 1 .9 1.6 1.6 1.6.9 0 1.3-.8 1.1-1.6-.3-1.3-.6-2.6.6-5.4z"></path>',
+    list: '<line x1="4" y1="6" x2="16" y2="6"></line><line x1="4" y1="10" x2="16" y2="10"></line><line x1="4" y1="14" x2="12" y2="14"></line>',
+    lock: '<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>',
+    gear: '<circle cx="10" cy="10" r="3"></circle><line x1="10" y1="2.5" x2="10" y2="4.5"></line><line x1="10" y1="15.5" x2="10" y2="17.5"></line><line x1="2.5" y1="10" x2="4.5" y2="10"></line><line x1="15.5" y1="10" x2="17.5" y2="10"></line><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"></line><line x1="13.7" y1="13.7" x2="15.1" y2="15.1"></line><line x1="4.9" y1="15.1" x2="6.3" y2="13.7"></line><line x1="13.7" y1="6.3" x2="15.1" y2="4.9"></line>',
+    plus: '<line x1="10" y1="4" x2="10" y2="16"></line><line x1="4" y1="10" x2="16" y2="10"></line>',
+    close: '<line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line>',
+    back: '<polyline points="12,4 6,10 12,16"></polyline>',
+    search: '<circle cx="8.5" cy="8.5" r="5"></circle><line x1="12.5" y1="12.5" x2="17" y2="17"></line>',
+    check: '<polyline points="4,10.5 8,14.5 16,5.5"></polyline>',
+    chevron: '<polyline points="8,4 13,10 8,16"></polyline>',
+    chevLeft: '<polyline points="12,4 7,10 12,16"></polyline>',
+    chevDown: '<polyline points="5,8 10,13 15,8"></polyline>',
+    chevUp: '<polyline points="5,12 10,7 15,12"></polyline>',
+    viewCards: '<rect x="3.5" y="3.5" width="13" height="5.5" rx="1.5"></rect><rect x="3.5" y="11" width="13" height="5.5" rx="1.5"></rect>',
+    viewCompact: '<line x1="3.5" y1="5" x2="16.5" y2="5"></line><line x1="3.5" y1="10" x2="16.5" y2="10"></line><line x1="3.5" y1="15" x2="16.5" y2="15"></line>',
+    calendar: '<rect x="3.5" y="4.5" width="13" height="12" rx="1.5"></rect><line x1="3.5" y1="8" x2="16.5" y2="8"></line><line x1="7" y1="2.5" x2="7" y2="5.5"></line><line x1="13" y1="2.5" x2="13" y2="5.5"></line>',
+    clock: '<circle cx="10" cy="10" r="6.5"></circle><polyline points="10,6.5 10,10 12.5,11.5"></polyline>',
+    person: '<circle cx="10" cy="7" r="3"></circle><path d="M4 16.5c0-3 2.7-5 6-5s6 2 6 5"></path>',
+    sortAsc: '<line x1="10" y1="16" x2="10" y2="4"></line><polyline points="5,9 10,4 15,9"></polyline>',
+    sortDesc: '<line x1="10" y1="4" x2="10" y2="16"></line><polyline points="5,11 10,16 15,11"></polyline>',
+    sliders: '<line x1="4" y1="6" x2="16" y2="6"></line><line x1="4" y1="14" x2="16" y2="14"></line><circle cx="8" cy="6" r="2" fill="var(--surface-2)"></circle><circle cx="13" cy="14" r="2" fill="var(--surface-2)"></circle>'
+  };
+
+  // ---------------------------------------------------------------------------------
+  // Seed data (unchanged)
+  // ---------------------------------------------------------------------------------
+  const INITIAL_ORDERS = [
+    { key: 'o1',  customer: 'Grace Villanueva',           phone: '0917 334 2201', orderDate: '2026-10-05', pickupAt: '2026-10-05T11:00', totalAmount: 2850, amountPaid: 2850, notes: '' },
+    { key: 'o2',  customer: 'Ramon Dela Cruz',             phone: '0919 770 1123', orderDate: '2026-10-06', pickupAt: '2026-10-06T09:30', totalAmount: 1200, amountPaid: 1200, notes: '' },
+    { key: 'o3',  customer: 'Kusina ni Nena (catering)',   phone: '0917 888 3390', orderDate: '2026-10-06', pickupAt: '2026-10-06T16:00', totalAmount: 6700, amountPaid: 4000, notes: 'Catering account — balance due on pickup.' },
+    { key: 'o4',  customer: 'Anna Reyes',                  phone: '0921 445 7789', orderDate: '2026-10-07', pickupAt: '2026-10-07T10:00', totalAmount: 650,  amountPaid: 650,  notes: '' },
+    { key: 'o5',  customer: 'Mendoza Family Reunion',      phone: '0918 556 0098', orderDate: '2026-10-07', pickupAt: '2026-10-07T12:00', totalAmount: 1950, amountPaid: 1950, notes: 'Birthday celebration.' },
+    { key: 'o6',  customer: 'Camille Ong',                 phone: '0921 334 5567', orderDate: '2026-10-08', pickupAt: '2026-10-08T18:00', totalAmount: 750,  amountPaid: 750,  notes: '' },
+    { key: 'o7',  customer: 'Diego Santos',                phone: '0915 673 9021', orderDate: '2026-10-08', pickupAt: '2026-10-08T15:00', totalAmount: 2850, amountPaid: 1000, notes: '' },
+    { key: 'o8',  customer: 'Paulo Tan',                   phone: '0917 220 4458', orderDate: '2026-10-08', pickupAt: '2026-10-08T17:30', totalAmount: 1200, amountPaid: 0,    notes: 'Pay on pickup.' },
+    { key: 'o9',  customer: 'Steph Lim',                   phone: '0922 889 4410', orderDate: '2026-10-08', pickupAt: '2026-10-08T13:00', totalAmount: 4500, amountPaid: 0,    notes: 'Customer cancelled — rescheduling for next week.' },
+    { key: 'o10', customer: 'The Garden Events Co.',        phone: '0917 998 2231', orderDate: '2026-10-09', pickupAt: '2026-10-09T17:00', totalAmount: 4400, amountPaid: 2000, notes: 'Wedding reception — deliver by 5pm.' },
+    { key: 'o11', customer: 'Mark Villanueva',             phone: '0920 556 7781', orderDate: '2026-10-09', pickupAt: '2026-10-09T10:00', totalAmount: 650,  amountPaid: 650,  notes: '' },
+    { key: 'o12', customer: 'Jen Dizon',                   phone: '0918 345 2210', orderDate: '2026-10-10', pickupAt: '2026-10-10T11:00', totalAmount: 1500, amountPaid: 500,  notes: '' },
+    { key: 'o13', customer: 'Maria Santos',                phone: '0917 902 4451', orderDate: '2026-10-12', pickupAt: '2026-10-12T09:00', totalAmount: 1200, amountPaid: 500,  notes: '' },
+    { key: 'o14', customer: 'Rosario Dizon',                phone: '0919 441 2287', orderDate: '2026-10-11', pickupAt: '2026-10-11T14:00', totalAmount: 1015, discountAmount: 15, amountPaid: 1000, notes: 'Agreed ₱15 discount at pickup.' }
+  ];
+  const INITIAL_ITEMS = [
+    { bookingId: '261005-001', orderKey: 'o1',  product: 'Lechon Belly',   status: 'completed' },
+    { bookingId: '261005-002', orderKey: 'o1',  product: 'Liempo',         status: 'completed' },
+    { bookingId: '261006-001', orderKey: 'o2',  product: 'Lechon Head',    status: 'completed' },
+    { bookingId: '261006-002', orderKey: 'o3',  product: 'Lechon Belly',   status: 'completed' },
+    { bookingId: '261006-003', orderKey: 'o3',  product: 'Lechon Turkey',  status: 'completed' },
+    { bookingId: '261007-001', orderKey: 'o4',  product: 'Liempo',         status: 'completed' },
+    { bookingId: '261007-002', orderKey: 'o5',  product: 'Lechon Head',    status: 'completed' },
+    { bookingId: '261007-003', orderKey: 'o5',  product: 'Lechon Chicken', status: 'completed' },
+    { bookingId: '261008-001', orderKey: 'o6',  product: 'Lechon Chicken', status: 'cooking', startedCookingAt: '2026-10-08T17:30' },
+    { bookingId: '261008-002', orderKey: 'o7',  product: 'Lechon Belly',   status: 'cooked' },
+    { bookingId: '261008-003', orderKey: 'o7',  product: 'Liempo',         status: 'pending' },
+    { bookingId: '261008-004', orderKey: 'o8',  product: 'Lechon Head',    status: 'pending' },
+    { bookingId: '261008-005', orderKey: 'o9',  product: 'Lechon Turkey',  status: 'cancelled' },
+    { bookingId: '261009-001', orderKey: 'o10', product: 'Lechon Belly',   status: 'pending' },
+    { bookingId: '261009-002', orderKey: 'o10', product: 'Lechon Belly',   status: 'pending' },
+    { bookingId: '261009-003', orderKey: 'o11', product: 'Liempo',         status: 'pending' },
+    { bookingId: '261010-001', orderKey: 'o12', product: 'Lechon Chicken', status: 'pending' },
+    { bookingId: '261010-002', orderKey: 'o12', product: 'Lechon Chicken', status: 'pending' },
+    { bookingId: '261012-001', orderKey: 'o13', product: 'Lechon Head',    status: 'pending' },
+    { bookingId: '261011-001', orderKey: 'o14', product: 'Lechon Belly',   status: 'completed' }
+  ];
+
+  // List view: 'detailed' (full cards) or 'compact' (booking ID + pickup time; tap a row to
+  // expand it into the full card). Remembered per device, like the column settings.
+  const LIST_VIEW_KEY = 'roastline.bookingListView';
+  function loadListView() { try { return localStorage.getItem(LIST_VIEW_KEY) === 'compact' ? 'compact' : 'detailed'; } catch (e) { return 'detailed'; } }
+
+  const COLUMNS_KEY = 'roastline.bookingColumns';
+  function loadVisibleColumns() {
+    const cols = { customer: true, product: true, cookingTime: true, pickup: true, status: true, total: true, paid: true };
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) || 'null');
+      if (saved) Object.keys(cols).forEach((k) => { if (typeof saved[k] === 'boolean') cols[k] = saved[k]; });
+    } catch (e) { /* storage unavailable — use defaults */ }
+    return cols;
+  }
+
+  // An order can be cancelled while it still has something to cancel (a pending or cooking
+  // item) and nothing has been cooked or handed over yet.
+  function orderCancellable(orderItems) {
+    return orderItems.some((it) => it.status === 'pending' || it.status === 'cooking')
+      && !orderItems.some((it) => it.status === 'cooked' || it.status === 'completed');
+  }
+
+  function defaultLineItems() { return [{ product: PRODUCT_NAMES[0], qty: 1 }]; }
+  // Pickup is kept as separate parts so the form can show date and time apart;
+  // composePickupAt() joins them into the usual "YYYY-MM-DDTHH:MM" (business-local) value.
+  function defaultNewForm() {
+    return {
+      customerName: '', phone: '',
+      pickupDate: addDays(TODAY, 1), pickupHour: 10, pickupMinute: '00', pickupPeriod: 'AM',
+      amountPaid: '', discount: '', lineItems: defaultLineItems()
+    };
+  }
+  function hour24(h12, period) { const h = (parseInt(h12, 10) || 12) % 12; return period === 'PM' ? h + 12 : h; }
+  // Minutes are typed by hand (digits only, max 2). Valid range 00–59; empty counts as 00.
+  function minuteOutOfRange(raw) { return raw !== '' && parseInt(raw, 10) > 59; }
+  function normalizeMinute(raw) { const n = parseInt(raw, 10); return pad2(isNaN(n) ? 0 : Math.min(59, Math.max(0, n))); }
+  function composePickupAt(f) { return f.pickupDate + 'T' + pad2(hour24(f.pickupHour, f.pickupPeriod)) + ':' + normalizeMinute(f.pickupMinute); }
+
+  // ---------------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------------
+  const state = {
+    orders: INITIAL_ORDERS.slice(),
+    items: INITIAL_ITEMS.slice(),
+    search: '',
+    statusFilter: 'all',
+    activeTab: 'list',
+    sortField: 'pickup',
+    sortDir: 'asc',
+    sheet: null,         // 'sort' | 'calendar' | null — bottom sheets
+    visibleColumns: loadVisibleColumns(),
+    selectedDate: null,
+    calendarMonth: TODAY.slice(0, 7),
+    calendarFor: 'filter', // which date the calendar sheet sets: 'filter' (date strip) | 'pickup' (New booking)
+    stripStart: addDays(TODAY, -2),
+    drawer: null,        // { type: 'detail', bookingId } | { type: 'new' } | null — full-screen sheets
+    confirm: null,       // { bookingId, actionLabel, nextStatusLabel } | null
+    discountDraft: null, // { orderKey, value } | null
+    paymentDraft: null,  // { orderKey, value } | null
+    nextSeqToday: 4,
+    newForm: defaultNewForm(),
+    kitchenSel: null,    // index of the tapped kitchen-load bar
+    toast: '',
+    resetStripScroll: false,
+    focusAfterRender: null,
+    listView: loadListView(),
+    pinPrompt: null,     // PIN confirmation sheet for critical actions (see requestPin)
+    expanded: {},        // bookingId → true, for rows opened in the compact view
+    created: null        // "Booking created" popup: { items: [{ id, product }], customer, pickupLabel } | null
+  };
+
+  let toastTimer = null;
+  function showToast(msg) {
+    state.toast = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { state.toast = ''; render(); }, 2600);
+  }
+
+
+  // =================================================================================
+  // PIN confirmation for critical actions (same block in menu- and bookings-prototype.html)
+  // ---------------------------------------------------------------------------------
+  // Asked before: adding a product, saving product edits, activating/deactivating a
+  // product (Menu — asked every time), and recording a payment or using "Discount remaining
+  // balance" or cancelling (Bookings — a correct PIN is remembered for 3 minutes, via opts.rememberMs).
+  // The action only runs after the correct PIN. 5 wrong tries → 30-second wait, same rule
+  // as the lock screen. The remembered window is in memory only, so it ends when the app
+  // locks or closes.
+  //
+  // Prototype only: the PIN is read from browser storage, written by signin-prototype.html
+  // when a PIN is set or changed (falls back to 1234). In the real app this is
+  // AppLockService.ConfirmAsync(pin) checking the hashed PIN in SQLite, and the service
+  // method itself refuses to run without that fresh confirmation.
+  // =================================================================================
+  const PIN_KEY = 'roastline.pin';
+  const BOOKING_PIN_REMEMBER_MS = 3 * 60 * 1000; // Bookings only — Menu always asks
+
+  // =================================================================================
+  // Automatic CSV backup — one file, bookings within 48 hours (implementation-plan.md §10.6)
+  // ---------------------------------------------------------------------------------
+  // - One file, "roastline-bookings-48h.csv", overwritten on every save.
+  // - Covers bookings whose pickup time is from 24 hours BEFORE to 24 hours AFTER the moment
+  //   of the save, one row per booking (cancelled too). Nothing outside that window.
+  // - Saved only while the app is open, when the last save was an hour ago or more (or never)
+  //   — checked when the app opens, every minute, and when it comes back to the front.
+  //   No save after individual changes, and nothing runs while the app is closed or hidden.
+  // Prototype only: the "file" lives in browser storage (roastline.csvBackup) so Settings can
+  // show and download it. The real app writes Documents/Roastline/ on Android (MediaStore).
+  // =================================================================================
+  const CSV_BACKUP_KEY = 'roastline.csvBackup';   // { name, savedAt, from, to, rows, csv }
+  const CSV_LAST_AT_KEY = 'roastline.csvLastAt';  // when the file was last saved
+  const CSV_FILE_NAME = 'roastline-bookings-48h.csv';
+  const CSV_WINDOW_MS = 24 * 60 * 60 * 1000;     // each side of "now"
+  const CSV_EVERY_MS = 60 * 60 * 1000;
+  const CSV_CHECK_EVERY_MS = 60 * 1000;
+  const CSV_HEADER = ['Booking ID', 'Order', 'Customer', 'Phone', 'Product', 'Status', 'Pickup date', 'Pickup time',
+    'Cooking time (min)', 'Started cooking', 'Order total', 'Order discount', 'Order net total', 'Order paid', 'Order balance', 'Notes'];
+  // Money columns are per ORDER and repeat on each booking row of that order — don't sum them
+  // across rows. A cancelled order shows a balance of 0 (refunds aren't tracked).
+
+  function csvCell(v) {
+    let s = v == null ? '' : String(v);
+    if (/^[=+\-@]/.test(s)) s = "'" + s; // a name like "=SUM(...)" must not run as a formula
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function csvPesos(n) { return (Math.round(Number(n || 0) * 100) / 100).toFixed(2); }
+  // "YYYY-MM-DDTHH:MM" (business-local) → ms. The real app compares UTC instants instead.
+  function localMs(iso) {
+    const d = iso.split('T')[0].split('-').map(Number), t = (iso.split('T')[1] || '00:00').split(':').map(Number);
+    return new Date(d[0], d[1] - 1, d[2], t[0], t[1]).getTime();
+  }
+  function msToLocalIso(ms) {
+    const x = new Date(ms);
+    return x.getFullYear() + '-' + pad2(x.getMonth() + 1) + '-' + pad2(x.getDate()) + 'T' + pad2(x.getHours()) + ':' + pad2(x.getMinutes());
+  }
+  function buildBookingsCsv(fromMs, toMs) {
+    const ordersByKey = {};
+    state.orders.forEach((o) => { ordersByKey[o.key] = o; });
+    const rows = state.items
+      .map((it) => ({ it, o: ordersByKey[it.orderKey] }))
+      .filter((r) => { if (!r.o || !r.o.pickupAt) return false; const t = localMs(r.o.pickupAt); return t >= fromMs && t <= toMs; })
+      .sort((a, b) => a.o.pickupAt.localeCompare(b.o.pickupAt) || a.it.bookingId.localeCompare(b.it.bookingId));
+    const lines = [CSV_HEADER.map(csvCell).join(',')];
+    rows.forEach(({ it, o }) => {
+      const p = PRODUCT_BY_NAME[it.product];
+      lines.push([
+        it.bookingId, o.key, customerLabel(o), o.phone || '', it.product, STATUS_META[it.status].label,
+        dateOnly(o.pickupAt), (o.pickupAt.split('T')[1] || ''), p ? p.cookingTimeMin : '',
+        it.startedCookingAt ? it.startedCookingAt.replace('T', ' ') : '',
+        csvPesos(o.totalAmount), csvPesos(o.discountAmount || 0), csvPesos(netTotal(o)),
+        csvPesos(o.amountPaid), csvPesos(it.status === 'cancelled' ? 0 : orderBalance(o)), o.notes || ''
+      ].map(csvCell).join(','));
+    });
+    // UTF-8 BOM so Excel shows names with ñ correctly; CRLF line endings.
+    return { csv: '﻿' + lines.join('\r\n') + '\r\n', rows: rows.length };
+  }
+  function writeBookingsCsv() {
+    try {
+      const nowMs = localMs(nowOnToday()); // prototype "now" = fixed TODAY + the real clock time
+      const fromMs = nowMs - CSV_WINDOW_MS, toMs = nowMs + CSV_WINDOW_MS;
+      const built = buildBookingsCsv(fromMs, toMs);
+      localStorage.setItem(CSV_BACKUP_KEY, JSON.stringify({
+        name: CSV_FILE_NAME, savedAt: new Date().toISOString(),
+        from: msToLocalIso(fromMs), to: msToLocalIso(toMs), rows: built.rows, csv: built.csv
+      }));
+      localStorage.setItem(CSV_LAST_AT_KEY, new Date().toISOString());
+    } catch (e) { /* real app: log it and show "Last CSV save failed" in Settings */ }
+  }
+  function csvHourlyCheck() {
+    if (document.visibilityState === 'hidden') return; // only while the app is in front
+    let lastAt = null;
+    try { lastAt = localStorage.getItem(CSV_LAST_AT_KEY); } catch (e) {}
+    if (lastAt && (Date.now() - new Date(lastAt).getTime()) < CSV_EVERY_MS) return;
+    writeBookingsCsv();
+  }
+  // ================= end automatic CSV backup =================
+  const PIN_MIN = 4, PIN_MAX = 6, PIN_MAX_ATTEMPTS = 5, PIN_LOCK_SECONDS = 30;
+  const pinGuard = { failed: 0, lockedUntil: 0, timer: null, rememberedUntil: 0 };
+  function currentPin() { try { return localStorage.getItem(PIN_KEY) || '1234'; } catch (e) { return '1234'; } }
+  function pinLocked() { return Date.now() < pinGuard.lockedUntil; }
+  function pinSecondsLeft() { return Math.max(0, Math.ceil((pinGuard.lockedUntil - Date.now()) / 1000)); }
+
+  // opts: { detail, confirmLabel, rememberMs }. onConfirm runs only after the correct PIN and
+  // must render(). With rememberMs, a correct PIN skips the prompt for that long afterwards
+  // (fixed window from when the PIN was entered — it isn't extended by later actions).
+  function requestPin(opts, onConfirm) {
+    if (opts.rememberMs && Date.now() < pinGuard.rememberedUntil) { onConfirm(); return; }
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // closes the on-screen keyboard
+    state.pinPrompt = { detail: opts.detail || '', confirmLabel: opts.confirmLabel || 'Confirm', rememberMs: opts.rememberMs || 0, entry: '', message: '', shake: false, onConfirm };
+    render();
+  }
+  function startPinTimer() {
+    if (pinGuard.timer) clearInterval(pinGuard.timer);
+    pinGuard.timer = setInterval(() => {
+      if (!pinLocked()) { clearInterval(pinGuard.timer); pinGuard.timer = null; }
+      if (state.pinPrompt) render();
+    }, 1000);
+  }
+  const PinActions = {
+    key(d) {
+      const p = state.pinPrompt;
+      if (!p || pinLocked() || p.entry.length >= PIN_MAX) return;
+      p.entry += d; p.message = ''; render();
+    },
+    back() { const p = state.pinPrompt; if (!p || pinLocked()) return; p.entry = p.entry.slice(0, -1); render(); },
+    cancel() { state.pinPrompt = null; render(); },
+    submit() {
+      const p = state.pinPrompt;
+      if (!p || pinLocked() || p.entry.length < PIN_MIN) return;
+      if (p.entry === currentPin()) {
+        pinGuard.failed = 0;
+        if (p.rememberMs) pinGuard.rememberedUntil = Date.now() + p.rememberMs;
+        const run = p.onConfirm;
+        state.pinPrompt = null;
+        run();
+        return;
+      }
+      pinGuard.failed += 1;
+      p.entry = ''; p.shake = true;
+      if (pinGuard.failed >= PIN_MAX_ATTEMPTS) {
+        pinGuard.failed = 0;
+        pinGuard.lockedUntil = Date.now() + PIN_LOCK_SECONDS * 1000;
+        p.message = '';
+        startPinTimer();
+      } else {
+        const left = PIN_MAX_ATTEMPTS - pinGuard.failed;
+        p.message = 'Incorrect PIN. ' + left + (left === 1 ? ' try' : ' tries') + ' left.';
+      }
+      render();
+    }
+  };
+  function pinKeydown(e) {
+    if (/^[0-9]$/.test(e.key)) { PinActions.key(e.key); e.preventDefault(); }
+    else if (e.key === 'Backspace') { PinActions.back(); e.preventDefault(); }
+    else if (e.key === 'Enter') { PinActions.submit(); e.preventDefault(); }
+    else if (e.key === 'Escape') { PinActions.cancel(); e.preventDefault(); }
+  }
+  function renderPinPrompt() {
+    const p = state.pinPrompt;
+    if (!p) return '';
+    const locked = pinLocked();
+    const dis = locked ? 'disabled' : '';
+    const dots = p.entry.length === 0
+      ? '<span class="pin-hint">Enter your PIN</span>'
+      : Array.from({ length: p.entry.length }, () => '<span class="pin-dot"></span>').join('');
+    const msg = locked ? 'Too many tries. Try again in ' + pinSecondsLeft() + 's.' : p.message;
+    const digits = ['1','2','3','4','5','6','7','8','9'].map((d) => `<button type="button" class="pin-key" data-action="pin-key" data-digit="${d}" ${dis}>${d}</button>`).join('');
+    const html = `
+      <div class="backdrop pin-layer" data-action="pin-cancel"></div>
+      <div class="sheet bottom pin-layer" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+        <div class="sheet-grabber"></div>
+        <div class="pin-body">
+          <div class="pin-head">
+            <span class="pin-icon">${icon('<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>', 20)}</span>
+            <h2 id="pin-title">Enter your PIN to continue</h2>
+            <p class="pin-detail">${esc(p.detail)}</p>
+            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs and cancellations won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
+          </div>
+          <div class="pin-dots ${p.shake ? 'pin-shake' : ''}" aria-live="polite" aria-label="${p.entry.length} digits entered">${dots}</div>
+          <div class="pin-msg" role="alert">${esc(msg)}</div>
+          <div class="pin-keypad" role="group" aria-label="PIN keypad">
+            ${digits}
+            <button type="button" class="pin-key fn" data-action="pin-back" aria-label="Delete" ${dis}>${icon('<path d="M7 5h9.5v10H7l-4.5-5z"></path><line x1="10" y1="8" x2="14" y2="12"></line><line x1="14" y1="8" x2="10" y2="12"></line>', 22)}</button>
+            <button type="button" class="pin-key" data-action="pin-key" data-digit="0" ${dis}>0</button>
+            <button type="button" class="pin-key ok" data-action="pin-ok" ${locked || p.entry.length < PIN_MIN ? 'disabled' : ''}>${esc(p.confirmLabel)}</button>
+          </div>
+          <button type="button" class="btn pin-cancel" data-action="pin-cancel">Cancel</button>
+        </div>
+      </div>`;
+    if (p.shake) setTimeout(() => { if (state.pinPrompt) state.pinPrompt.shake = false; }, 400);
+    return html;
+  }
+  // ================= end PIN confirmation =================
+
+  // ---------------------------------------------------------------------------------
+  // Actions — the only code allowed to mutate state.
+  // ---------------------------------------------------------------------------------
+  const Actions = {
+    openDetail(bookingId) { state.drawer = { type: 'detail', bookingId }; state.discountDraft = null; state.paymentDraft = null; render(); },
+    closeDrawer() { state.drawer = null; state.discountDraft = null; state.paymentDraft = null; render(); },
+    openNewForm() { state.drawer = { type: 'new' }; render(); },
+
+    openSheet(name) {
+      if (name === 'calendar') { state.calendarFor = 'filter'; state.calendarMonth = (state.selectedDate || TODAY).slice(0, 7); }
+      state.sheet = name; render();
+    },
+    closeSheet() { state.sheet = null; render(); },
+    setSortField(field) { state.sortField = field; render(); },
+    setSortDir(dir) { state.sortDir = dir; render(); },
+    setTab(tab) { state.activeTab = tab; render(); },
+    setStatusFilter(key) { state.statusFilter = key; render(); },
+
+    selectDate(dateStr) {
+      if (!isDateSchedulable(dateStr)) return; // outside the ±6-month window — ignored at the state layer
+      const next = state.selectedDate === dateStr ? null : dateStr;
+      if (next) {
+        const windowEnd = addDays(state.stripStart, 9);
+        if (next < state.stripStart || next > windowEnd) {
+          state.stripStart = clampStripStart(addDays(next, -2));
+          state.resetStripScroll = true;
+        }
+      }
+      state.selectedDate = next;
+      state.kitchenSel = null;
+      state.sheet = null;
+      render();
+    },
+    clearDate() { state.selectedDate = null; state.kitchenSel = null; state.sheet = null; render(); },
+    shiftMonth(delta) {
+      const p = state.calendarMonth.split('-');
+      let y = parseInt(p[0], 10), m = parseInt(p[1], 10) - 1 + delta;
+      while (m < 0) { m += 12; y -= 1; }
+      while (m > 11) { m -= 12; y += 1; }
+      state.calendarMonth = clampMonth(y + '-' + pad2(m + 1));
+      render();
+    },
+    jumpToday() {
+      state.calendarMonth = TODAY.slice(0, 7);
+      state.selectedDate = TODAY;
+      state.sheet = null;
+      state.kitchenSel = null;
+      state.stripStart = addDays(TODAY, -2);
+      state.resetStripScroll = true;
+      render();
+    },
+    shiftStrip(delta) { state.stripStart = clampStripStart(addDays(state.stripStart, delta)); state.resetStripScroll = true; render(); },
+
+    advanceStatus(bookingId, fromConfirm) {
+      let changed = null;
+      state.items = state.items.map((it) => {
+        if (it.bookingId !== bookingId) return it;
+        const next = NEXT_STATUS[it.status];
+        if (!next) return it;
+        const patch = { status: next };
+        if (it.status === 'pending' && next === 'cooking') patch.startedCookingAt = nowOnToday();
+        changed = Object.assign({}, it, patch);
+        return changed;
+      });
+      if (changed) showToast(bookingId + ' → ' + STATUS_META[changed.status].label);
+      render();
+    },
+    // Cancelling always cancels the WHOLE order (every item in it). Allowed only while none of
+    // the order's items is cooked or completed. Critical action: needs the PIN (Bookings
+    // window — remembered 3 minutes).
+    cancelOrder(bookingId) {
+      const item = state.items.find((it) => it.bookingId === bookingId);
+      if (!item) return;
+      const orderKey = item.orderKey;
+      const order = state.orders.find((o) => o.key === orderKey);
+      const orderItems = state.items.filter((it) => it.orderKey === orderKey);
+      if (!orderCancellable(orderItems)) return;
+      const toCancel = orderItems.filter((it) => it.status !== 'cancelled');
+      const ids = toCancel.map((it) => it.bookingId);
+      const who = customerLabel(order);
+      const detail = (toCancel.length === 1
+        ? 'Cancel booking ' + ids[0] + ' for ' + who + '.'
+        : 'Cancel the whole order for ' + who + ': ' + toCancel.length + ' bookings (' + ids.join(', ') + ').')
+        + (order && order.amountPaid > 0 ? ' ' + formatMoney(order.amountPaid) + ' was already paid — handle any refund outside the app.' : '');
+      requestPin({ detail, confirmLabel: 'Confirm', rememberMs: BOOKING_PIN_REMEMBER_MS }, () => {
+        const current = state.items.filter((it) => it.orderKey === orderKey);
+        if (!orderCancellable(current)) { showToast("Can't cancel — part of this order is already cooked or completed."); render(); return; }
+        state.items = state.items.map((it) => (it.orderKey === orderKey && it.status !== 'cancelled' ? Object.assign({}, it, { status: 'cancelled' }) : it));
+        state.discountDraft = null; state.paymentDraft = null;
+        showToast(toCancel.length === 1 ? ids[0] + ' cancelled' : 'Order cancelled · ' + toCancel.length + ' bookings');
+        render();
+      });
+    },
+
+    openDiscountEditor(orderKey) {
+      const order = state.orders.find((o) => o.key === orderKey);
+      state.discountDraft = { orderKey, value: order && order.discountAmount ? String(order.discountAmount) : '' };
+      state.paymentDraft = null;
+      state.focusAfterRender = 'discount-input';
+      render();
+    },
+    cancelDiscountEdit() { state.discountDraft = null; render(); },
+    saveDiscount() {
+      const draft = state.discountDraft;
+      if (!draft) return;
+      state.orders = state.orders.map((o) => {
+        if (o.key !== draft.orderKey) return o;
+        const parsed = Number(draft.value);
+        const safe = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+        return Object.assign({}, o, { discountAmount: Math.min(safe, o.totalAmount) });
+      });
+      state.discountDraft = null;
+      render();
+    },
+    removeDiscount(orderKey) {
+      state.orders = state.orders.map((o) => (o.key === orderKey ? Object.assign({}, o, { discountAmount: 0 }) : o));
+      state.discountDraft = null;
+      render();
+    },
+    discountRemainingBalance(orderKey) {
+      const order = state.orders.find((o) => o.key === orderKey);
+      if (!order || orderBalance(order) <= 0) return;
+      const bookingId = state.drawer && state.drawer.type === 'detail' ? state.drawer.bookingId : '';
+      // Critical action: waives money owed, so it needs the PIN (remembered 3 min in Bookings).
+      requestPin({
+        detail: 'Waive the remaining ' + formatMoney(orderBalance(order)) + ' for ' + customerLabel(order) + (bookingId ? ' (' + bookingId + ')' : '') + '.',
+        confirmLabel: 'Waive',
+        rememberMs: BOOKING_PIN_REMEMBER_MS
+      }, () => {
+        // Recomputed from the order as it is now, not from the amount shown in the prompt.
+        state.orders = state.orders.map((o) => {
+          if (o.key !== orderKey) return o;
+          return Object.assign({}, o, { discountAmount: Math.min((o.discountAmount || 0) + orderBalance(o), o.totalAmount) });
+        });
+        showToast('Remaining balance waived');
+        render();
+      });
+    },
+
+    openPaymentEditor(orderKey) {
+      const order = state.orders.find((o) => o.key === orderKey);
+      const bal = order ? orderBalance(order) : 0;
+      state.paymentDraft = { orderKey, value: bal > 0 ? String(bal) : '' };
+      state.discountDraft = null;
+      state.focusAfterRender = 'payment-input';
+      render();
+    },
+    cancelPaymentEdit() { state.paymentDraft = null; render(); },
+    savePayment() {
+      const draft = state.paymentDraft;
+      if (!draft) return;
+      const parsed = Number(draft.value);
+      const paid = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+      if (paid === 0) { state.paymentDraft = null; render(); return; } // nothing to record — no PIN needed
+      const orderKey = draft.orderKey;
+      const order = state.orders.find((o) => o.key === orderKey);
+      const bookingId = state.drawer && state.drawer.type === 'detail' ? state.drawer.bookingId : '';
+      // Critical action: the payment is only added after the PIN is entered.
+      requestPin({
+        detail: 'Record a ' + formatMoney(paid) + ' payment' + (order ? ' from ' + customerLabel(order) : '') + (bookingId ? ' (' + bookingId + ')' : '') + '.',
+        confirmLabel: 'Record',
+        rememberMs: BOOKING_PIN_REMEMBER_MS
+      }, () => {
+        state.orders = state.orders.map((o) => (o.key === orderKey ? Object.assign({}, o, { amountPaid: o.amountPaid + paid }) : o)); // additive, never an overwrite
+        state.paymentDraft = null;
+        showToast('Recorded ' + formatMoney(paid) + ' payment');
+        render();
+      });
+    },
+
+    requestAdvance(bookingId) {
+      const it = state.items.find((i) => i.bookingId === bookingId);
+      if (!it || !NEXT_STATUS[it.status]) return;
+      state.confirm = { bookingId, actionLabel: NEXT_ACTION_LABEL[it.status], nextStatusLabel: STATUS_META[NEXT_STATUS[it.status]].label };
+      render();
+    },
+    cancelConfirm() { state.confirm = null; render(); },
+    confirmAdvance() {
+      const c = state.confirm;
+      state.confirm = null;
+      if (c) Actions.advanceStatus(c.bookingId); else render();
+    },
+
+    setLineProduct(index, product) {
+      const lines = state.newForm.lineItems.slice();
+      lines[index] = Object.assign({}, lines[index], { product });
+      state.newForm.lineItems = lines;
+      render();
+    },
+    stepQty(index, delta) {
+      const lines = state.newForm.lineItems.slice();
+      const current = Math.max(1, Math.round(Number(lines[index].qty) || 1));
+      lines[index] = Object.assign({}, lines[index], { qty: Math.max(1, current + delta) });
+      state.newForm.lineItems = lines;
+      render();
+    },
+    addLineItem() {
+      state.newForm.lineItems = state.newForm.lineItems.concat([{ product: PRODUCT_NAMES[0], qty: 1 }]);
+      render();
+    },
+    removeLineItem(index) {
+      const lines = state.newForm.lineItems.slice();
+      if (lines.length > 1) lines.splice(index, 1);
+      else lines[0] = { product: PRODUCT_NAMES[0], qty: 1 };
+      state.newForm.lineItems = lines;
+      render();
+    },
+
+    submitNewBooking() {
+      const f = state.newForm;
+      const validLines = f.lineItems.filter((l) => l.product && Number(l.qty) >= 1);
+      if (validLines.length === 0) return;
+
+      const orderKey = 'o-new-' + Date.now();
+      f.pickupMinute = normalizeMinute(f.pickupMinute);
+      const pickupAt = composePickupAt(f);
+      let seq = state.nextSeqToday;
+      const newItems = [];
+      let totalAmount = 0;
+      validLines.forEach((line) => {
+        const qty = Math.round(Number(line.qty));
+        const product = PRODUCT_BY_NAME[line.product];
+        totalAmount += (product ? product.price : 0) * qty;
+        for (let i = 0; i < qty; i++) {
+          newItems.push({ bookingId: makeBookingId(seq), orderKey, product: line.product, status: 'pending' });
+          seq += 1;
+        }
+      });
+      const discountAmount = Math.max(0, Math.min(Number(f.discount) || 0, totalAmount));
+      const newOrder = {
+        key: orderKey,
+        customer: f.customerName ? f.customerName.trim() : '',
+        phone: f.phone ? f.phone.trim() : '',
+        orderDate: TODAY, pickupAt, totalAmount, discountAmount,
+        amountPaid: Number(f.amountPaid) || 0,
+        notes: ''
+      };
+      state.orders = [newOrder].concat(state.orders);
+      state.items = newItems.concat(state.items);
+      state.nextSeqToday = seq;
+      state.drawer = null;
+      state.newForm = defaultNewForm();
+      // Show the new booking ID(s) in a popup that stays until the user taps Done
+      // (no auto-dismiss, and tapping outside doesn't close it), so the ID can be
+      // written on the order slip or read out to the customer.
+      state.created = {
+        items: newItems.map((it) => ({ id: it.bookingId, product: it.product })),
+        customer: customerLabel(newOrder),
+        pickupLabel: formatDateTime(pickupAt)
+      };
+      state.focusAfterRender = 'created-done';
+      render();
+    },
+    closeCreated() { state.created = null; render(); },
+
+    // ---- New booking: pickup date & time ----
+    openPickupCalendar() {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      state.calendarFor = 'pickup';
+      state.calendarMonth = clampMonth(state.newForm.pickupDate.slice(0, 7));
+      state.sheet = 'calendar';
+      render();
+    },
+    setPickupDate(dateStr) {
+      if (!isDateSchedulable(dateStr)) return; // same ±6-month window as everywhere else
+      state.newForm.pickupDate = dateStr;
+      state.sheet = null;
+      render();
+    },
+    setPickupPeriod(period) { state.newForm.pickupPeriod = period === 'PM' ? 'PM' : 'AM'; render(); },
+
+    selectKitchenBar(index) { state.kitchenSel = state.kitchenSel === index ? null : index; render(); },
+
+    setListView(view) {
+      state.listView = view === 'compact' ? 'compact' : 'detailed';
+      state.expanded = {};
+      try { localStorage.setItem(LIST_VIEW_KEY, state.listView); } catch (e) { /* this session only */ }
+      render();
+    },
+    toggleExpand(bookingId) {
+      if (state.expanded[bookingId]) delete state.expanded[bookingId];
+      else state.expanded[bookingId] = true;
+      render();
+    }
+  };
+
+  // ---------------------------------------------------------------------------------
+  // View model — pure function of state (same math as the web prototype).
+  // ---------------------------------------------------------------------------------
+  function kitchenChartWidth() {
+    const vw = Math.min(window.innerWidth || 375, 760);
+    return Math.max(260, Math.round(vw - 32 - 30)); // page gutters + card padding/border
+  }
+
+  function computeViewModel() {
+    const { orders, items, search, statusFilter, sortField, sortDir, visibleColumns, selectedDate, calendarMonth, stripStart, drawer, confirm, newForm } = state;
+    const ordersByKey = {};
+    orders.forEach((o) => { ordersByKey[o.key] = o; });
+
+    // ---- status chip counts (global — ignore date/search) ----
+    const counts = { all: items.length };
+    STATUS_CHIP_ORDER.forEach((s) => { if (s !== 'all') counts[s] = 0; });
+    items.forEach((it) => { counts[it.status] = (counts[it.status] || 0) + 1; });
+    const chips = STATUS_CHIP_ORDER.map((key) => ({
+      key, active: statusFilter === key,
+      label: (key === 'all' ? 'All' : STATUS_META[key].label) + ' · ' + (counts[key] || 0)
+    }));
+
+    // ---- date strip / calendar ----
+    const bookingCountsByDate = {};
+    items.forEach((it) => {
+      const order = ordersByKey[it.orderKey];
+      if (!order) return;
+      const d = dateOnly(order.pickupAt);
+      bookingCountsByDate[d] = (bookingCountsByDate[d] || 0) + 1;
+    });
+    const stripDays = [];
+    for (let i = 0; i < 10; i++) {
+      const d = addDays(stripStart, i);
+      stripDays.push({ day: d, weekdayLabel: weekdayOf(d), dayNum: parseInt(d.slice(8, 10), 10), count: bookingCountsByDate[d] || 0, isSelected: d === selectedDate, isToday: d === TODAY, inRange: isDateSchedulable(d) });
+    }
+    const calSelected = state.calendarFor === 'pickup' ? newForm.pickupDate : selectedDate;
+    const cp = calendarMonth.split('-');
+    const calYear = parseInt(cp[0], 10), calMonth = parseInt(cp[1], 10) - 1;
+    const firstWeekday = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const calendarCells = [];
+    for (let i = 0; i < firstWeekday; i++) calendarCells.push({ inMonth: false });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = calYear + '-' + pad2(calMonth + 1) + '-' + pad2(d);
+      calendarCells.push({ inMonth: true, day: d, dateStr: ds, hasBookings: (bookingCountsByDate[ds] || 0) > 0, isToday: ds === TODAY, isSelected: ds === calSelected, inRange: isDateSchedulable(ds) });
+    }
+    while (calendarCells.length % 7 !== 0) calendarCells.push({ inMonth: false });
+
+    // ---- booking list ----
+    const q = search.trim().toLowerCase();
+    const visible = items.filter((it) => {
+      if (statusFilter !== 'all' && it.status !== statusFilter) return false;
+      const order = ordersByKey[it.orderKey];
+      if (selectedDate && (!order || dateOnly(order.pickupAt) !== selectedDate)) return false;
+      if (!q) return true;
+      const customer = order ? customerLabel(order).toLowerCase() : '';
+      return it.bookingId.toLowerCase().indexOf(q) !== -1 || it.product.toLowerCase().indexOf(q) !== -1 || customer.indexOf(q) !== -1;
+    });
+    const entries = visible.map((it) => ({ it, order: ordersByKey[it.orderKey], pickupAt: ordersByKey[it.orderKey] ? ordersByKey[it.orderKey].pickupAt : '' }));
+
+    // Bookings per order, in booking ID order (all statuses, so the numbering never shifts
+    // when one is cancelled or filtered out). Drives the "1 of 2" tag on multi-booking orders.
+    const idsByOrder = {};
+    items.forEach((it) => { (idsByOrder[it.orderKey] = idsByOrder[it.orderKey] || []).push(it.bookingId); });
+    Object.keys(idsByOrder).forEach((k) => idsByOrder[k].sort());
+
+    function buildRow(e) {
+      const meta = STATUS_META[e.it.status];
+      const product = PRODUCT_BY_NAME[e.it.product];
+      const nextLabel = NEXT_ACTION_LABEL[e.it.status];
+      const orderIds = idsByOrder[e.it.orderKey] || [e.it.bookingId];
+      return {
+        isHeader: false, isRow: true, id: e.it.bookingId,
+        orderCount: orderIds.length,
+        orderPos: orderIds.indexOf(e.it.bookingId) + 1,
+        customer: customerLabel(e.order), product: e.it.product,
+        cookingTimeLabel: product ? formatDuration(product.cookingTimeMin) : '—',
+        pickupLabel: formatDateTime(e.pickupAt),
+        pickupTimeLabel: formatTime(e.pickupAt),
+        statusLabel: meta.label, statusColor: meta.css,
+        totalLabel: e.order ? formatMoney(netTotal(e.order)) : '—',
+        hasDiscount: !!(e.order && e.order.discountAmount),
+        grossTotalLabel: e.order ? formatMoney(e.order.totalAmount) : '—',
+        paidLabel: e.order ? formatMoney(e.order.amountPaid) : '—',
+        canAdvance: !!nextLabel, advanceTitle: nextLabel || ''
+      };
+    }
+
+    const showGroups = !selectedDate && sortField === 'pickup';
+    const displayRows = [];
+    if (showGroups) {
+      const dateMap = {};
+      entries.forEach((e) => { const d = dateOnly(e.pickupAt) || 'unscheduled'; (dateMap[d] = dateMap[d] || []).push(e); });
+      const dateKeys = Object.keys(dateMap).sort();
+      if (sortDir === 'desc') dateKeys.reverse();
+      dateKeys.forEach((ds) => {
+        const dayEntries = dateMap[ds].slice().sort((a, b) => (a.pickupAt || '').localeCompare(b.pickupAt || ''));
+        displayRows.push({ isHeader: true, dateLabel: formatDateHeader(ds === 'unscheduled' ? '' : ds), isToday: ds === TODAY, countLabel: dayEntries.length + (dayEntries.length === 1 ? ' booking' : ' bookings') });
+        dayEntries.forEach((e) => displayRows.push(buildRow(e)));
+      });
+    } else {
+      const compare = (a, b) => {
+        switch (sortField) {
+          case 'status': return STATUS_ORDER.indexOf(a.it.status) - STATUS_ORDER.indexOf(b.it.status);
+          case 'bookingId': return a.it.bookingId.localeCompare(b.it.bookingId);
+          case 'customer': return customerLabel(a.order).localeCompare(customerLabel(b.order));
+          case 'product': return a.it.product.localeCompare(b.it.product);
+          case 'cookingTime': {
+            const pa = PRODUCT_BY_NAME[a.it.product], pb = PRODUCT_BY_NAME[b.it.product];
+            return (pa ? pa.cookingTimeMin : 0) - (pb ? pb.cookingTimeMin : 0);
+          }
+          default: return (a.pickupAt || '').localeCompare(b.pickupAt || '');
+        }
+      };
+      entries.slice().sort((a, b) => (sortDir === 'desc' ? -compare(a, b) : compare(a, b))).forEach((e) => displayRows.push(buildRow(e)));
+    }
+    const rowCount = displayRows.filter((r) => r.isRow).length;
+
+    // ---- dashboard ----
+    const dashScope = selectedDate ? formatScopeDate(selectedDate) : 'all dates';
+    const dashOrderKeys = {};
+    const dashItems = items.filter((it) => {
+      const order = ordersByKey[it.orderKey];
+      if (!order) return false;
+      if (selectedDate && dateOnly(order.pickupAt) !== selectedDate) return false;
+      dashOrderKeys[it.orderKey] = true;
+      return true;
+    });
+    const dashOrders = orders.filter((o) => dashOrderKeys[o.key]);
+    const dashTotalItems = dashItems.length;
+    const dashCounts = { pending: 0, cooking: 0, cooked: 0, completed: 0, cancelled: 0 };
+    dashItems.forEach((it) => { dashCounts[it.status] += 1; });
+
+    let dashRevenue = 0, dashCollected = 0, dashBalanceDue = 0, dashBillableOrders = 0;
+    const balanceEntries = [];
+    dashOrders.forEach((o) => {
+      const orderItems = items.filter((it) => it.orderKey === o.key);
+      if (orderItems.length > 0 && orderItems.every((it) => it.status === 'cancelled')) return;
+      dashRevenue += netTotal(o);
+      dashCollected += o.amountPaid;
+      dashBillableOrders += 1;
+      const bal = orderBalance(o);
+      dashBalanceDue += bal;
+      if (bal > 0) balanceEntries.push({ customer: customerLabel(o), dateLabel: formatDateTime(o.pickupAt), balance: bal, balanceLabel: formatMoney(bal) });
+    });
+    const stats = [
+      { label: 'Total bookings', value: String(dashTotalItems) },
+      { label: 'Total revenue', value: formatMoney(dashRevenue) },
+      { label: 'Collected', value: formatMoney(dashCollected) },
+      { label: 'Balance due', value: formatMoney(dashBalanceDue) },
+      { label: 'Avg. order value', value: formatMoney(dashBillableOrders > 0 ? dashRevenue / dashBillableOrders : 0) }
+    ];
+    const statusSegments = STATUS_ORDER.map((key) => {
+      const count = dashCounts[key] || 0;
+      return { key, label: STATUS_META[key].label, color: STATUS_META[key].css, count, widthPct: dashTotalItems > 0 ? (count / dashTotalItems) * 100 : 0, visible: count > 0 };
+    });
+    const productCounts = {};
+    dashItems.forEach((it) => { if (it.status !== 'cancelled') productCounts[it.product] = (productCounts[it.product] || 0) + 1; });
+    const maxProductCount = Math.max(1, PRODUCT_NAMES.reduce((m, n) => Math.max(m, productCounts[n] || 0), 0));
+    const productMix = PRODUCT_NAMES.map((name) => ({ name, count: productCounts[name] || 0 }))
+      .filter((p) => p.count > 0).sort((a, b) => b.count - a.count)
+      .map((p) => ({ name: p.name, count: String(p.count), widthPct: (p.count / maxProductCount) * 100 }));
+    balanceEntries.sort((a, b) => b.balance - a.balance);
+    const balanceList = balanceEntries.slice(0, 5);
+    const extraBalanceCount = balanceEntries.length - balanceList.length;
+
+    // ---- kitchen load (specific date, today or later) ----
+    const showKitchenLoad = !!selectedDate && selectedDate >= TODAY;
+    // D31: fixed day axis, 12 AM – 11:59 PM of the selected date, HOUR_W px per hour. The plot is wider than the
+    // screen and scrolls sideways; the y-axis labels sit in a fixed AXIS_W column to its left.
+    const CW = kitchenChartWidth(), CH = 184, AXIS_W = 30, HOUR_W = 40;
+    const kitchen = { hasData: false, bars: [], xTicks: [], yTicks: [], CW, CH, axisW: AXIS_W, baseY: 0, plotTop: 18,
+      plotRight: 24 * HOUR_W, plotWidth: 24 * HOUR_W + 8, nowX: null, openScroll: 0 };
+    if (showKitchenLoad) {
+      const nowMin = toAbsMinutes(nowOnToday());
+      const intervals = dashItems.filter((it) => it.status === 'pending' || it.status === 'cooking').map((it) => {
+        const order = ordersByKey[it.orderKey];
+        const product = PRODUCT_BY_NAME[it.product];
+        const cookMin = product ? product.cookingTimeMin : 0;
+        let startMin, endMin;
+        if (it.status === 'cooking' && it.startedCookingAt) {
+          startMin = toAbsMinutes(it.startedCookingAt); endMin = startMin + cookMin;
+        } else {
+          const idealEnd = order ? toAbsMinutes(order.pickupAt) : toAbsMinutes(selectedDate + 'T00:00');
+          const idealStart = idealEnd - cookMin;
+          if (idealStart < nowMin) { startMin = nowMin; endMin = nowMin + cookMin; } // already late → starts now
+          else { startMin = idealStart; endMin = idealEnd; }
+        }
+        return { startMin, endMin: Math.max(endMin, startMin + 1) };
+      });
+      if (intervals.length > 0) {
+        kitchen.hasData = true;
+        const rangeEnd = Math.max.apply(null, intervals.map((iv) => iv.endMin));
+        const deltaMap = {};
+        intervals.forEach((iv) => {
+          deltaMap[iv.startMin] = (deltaMap[iv.startMin] || 0) + 1;
+          deltaMap[iv.endMin] = (deltaMap[iv.endMin] || 0) - 1;
+        });
+        const times = Object.keys(deltaMap).map((k) => parseInt(k, 10)).sort((a, b) => a - b);
+        let running = 0;
+        const steps = times.map((t) => { running += deltaMap[t]; return { t, count: running }; });
+        const maxCount = steps.reduce((m, s) => Math.max(m, s.count), 0);
+
+        const padTop = kitchen.plotTop, padBottom = 24;
+        const plotH = CH - padTop - padBottom;
+        const dayStart = toAbsMinutes(selectedDate + 'T00:00'), dayEnd = dayStart + 1440;
+        const xScale = (t) => ((t - dayStart) / 60) * HOUR_W;
+        const yScale = (c) => padTop + (1 - (maxCount > 0 ? c / maxCount : 0)) * plotH;
+        const yBase = padTop + plotH;
+        kitchen.baseY = yBase;
+        kitchen.plotH = plotH;
+
+        // Bar parts outside the day are cut off; the tooltip and readout keep the bar's real times.
+        kitchen.bars = steps.map((s, i) => {
+          const segEnd = (i + 1 < steps.length) ? steps[i + 1].t : rangeEnd;
+          const x1 = xScale(Math.max(s.t, dayStart)), x2 = xScale(Math.min(segEnd, dayEnd));
+          const yTop = yScale(s.count);
+          return {
+            x: x1, width: x2 - x1, y: yTop, height: Math.max(0, yBase - yTop),
+            count: s.count, showLabel: (x2 - x1) >= 18 && s.count > 0,
+            startLabel: formatClockFromMinutes(s.t), endLabel: formatClockFromMinutes(segEnd),
+            tooltip: s.count + ' cooking · ' + formatClockFromMinutes(s.t) + ' – ' + formatClockFromMinutes(segEnd)
+          };
+        }).filter((b) => b.width > 0).map((b, i) => Object.assign(b, { index: i }));
+
+        // One tick per hour: 12 AM … 11 PM. The first is left-anchored so it isn't clipped.
+        for (let h = 0; h < 24; h++) {
+          kitchen.xTicks.push({ x: h * HOUR_W, label: formatHourFromMinutes(dayStart + h * 60), anchor: h === 0 ? 'start' : 'middle' });
+        }
+        const yStep = maxCount > 6 ? 2 : 1;
+        for (let c = 0; c <= maxCount; c += yStep) kitchen.yTicks.push({ y: yScale(c), label: String(c) });
+
+        // Today: a "now" line, and the chart opens centred on it. Other dates open an hour before the first busy bar.
+        const nowAbs = toAbsMinutes(nowOnToday());
+        if (nowAbs >= dayStart && nowAbs < dayEnd) kitchen.nowX = xScale(nowAbs);
+        const visible = CW - AXIS_W;
+        const firstBusy = kitchen.bars.find((b) => b.count > 0);
+        const target = kitchen.nowX != null ? kitchen.nowX - visible / 2 : (firstBusy ? firstBusy.x - HOUR_W : 0);
+        kitchen.openScroll = Math.min(Math.max(0, target), Math.max(0, kitchen.plotWidth - visible));
+        // A new date or width gets a new scroll key, so it opens at openScroll; other re-renders keep the user's scroll.
+        kitchen.scrollKey = 'kitchen-' + selectedDate + '-' + CW;
+      }
+    }
+
+    // ---- detail sheet ----
+    const selectedItem = drawer && drawer.type === 'detail' ? items.find((it) => it.bookingId === drawer.bookingId) : null;
+    let detail = null;
+    if (selectedItem) {
+      const order = ordersByKey[selectedItem.orderKey];
+      const meta = STATUS_META[selectedItem.status];
+      const product = PRODUCT_BY_NAME[selectedItem.product];
+      const nextLabel = NEXT_ACTION_LABEL[selectedItem.status];
+      const balance = order ? orderBalance(order) : 0;
+      const hasDiscount = !!(order && order.discountAmount);
+      const discountEditing = !!(order && state.discountDraft && state.discountDraft.orderKey === order.key);
+      const paymentEditing = !!(order && state.paymentDraft && state.paymentDraft.orderKey === order.key);
+      const showDiscountRemainingBalance = !!order && balance > 0 && balance < order.totalAmount * 0.1 && !discountEditing && !paymentEditing;
+      const pct = order && order.totalAmount > 0 ? Math.round((balance / order.totalAmount) * 1000) / 10 : 0;
+      const orderItems = items.filter((it) => it.orderKey === selectedItem.orderKey);
+      detail = {
+        id: selectedItem.bookingId, orderKey: order ? order.key : '',
+        product: selectedItem.product,
+        cookingTimeLabel: product ? formatDuration(product.cookingTimeMin) : '—',
+        pickupLabel: order ? formatDateTime(order.pickupAt) : '—',
+        customer: customerLabel(order),
+        phone: order && order.phone ? order.phone : '',
+        statusLabel: meta.label, statusColor: meta.css,
+        totalLabel: order ? formatMoney(order.totalAmount) : '—',
+        paidLabel: order ? formatMoney(order.amountPaid) : '—',
+        balanceLabel: formatMoney(balance),
+        balanceColor: balance > 0 ? 'var(--status-cooking)' : 'var(--status-cooked)',
+        discountLabel: order ? '−' + formatMoney(order.discountAmount || 0) : '',
+        netTotalLabel: order ? formatMoney(netTotal(order)) : '—',
+        maxDiscountLabel: order ? formatMoney(order.totalAmount) : '',
+        showApplyDiscountLink: !!order && !hasDiscount && !discountEditing && !paymentEditing,
+        showDiscountRow: hasDiscount && !discountEditing,
+        canEditDiscount: !paymentEditing,
+        discountEditing, discountDraftValue: discountEditing ? state.discountDraft.value : '',
+        showRecordPaymentLink: !!order && balance > 0 && !paymentEditing && !discountEditing,
+        paymentEditing, paymentDraftValue: paymentEditing ? state.paymentDraft.value : '',
+        showDiscountRemainingBalance, remainingBalancePctLabel: pct + '%',
+        notes: order && order.notes ? order.notes : '',
+        siblings: items.filter((it) => it.orderKey === selectedItem.orderKey && it.bookingId !== selectedItem.bookingId)
+          .map((it) => ({ id: it.bookingId, product: it.product, statusLabel: STATUS_META[it.status].label, statusColor: STATUS_META[it.status].css })),
+        showAdvance: !!nextLabel, advanceLabel: nextLabel || '',
+        showCancel: orderCancellable(orderItems),
+        cancelLabel: orderItems.filter((it) => it.status !== 'cancelled').length > 1 ? 'Cancel order' : 'Cancel booking',
+        cancelBlocked: (selectedItem.status === 'pending' || selectedItem.status === 'cooking') && !orderCancellable(orderItems)
+      };
+    }
+
+    // ---- new booking form ----
+    const lineItems = newForm.lineItems.map((line, index) => {
+      const product = PRODUCT_BY_NAME[line.product] || PRODUCTS[0];
+      return {
+        index, qty: line.qty,
+        productCards: PRODUCTS.map((p) => ({ name: p.name, cookingTimeLabel: formatDuration(p.cookingTimeMin), priceLabel: formatMoney(p.price), selected: p.name === line.product })),
+        subtotalLabel: formatMoney(product.price * (Number(line.qty) || 0))
+      };
+    });
+    const newTotal = newForm.lineItems.reduce((sum, l) => { const p = PRODUCT_BY_NAME[l.product]; return sum + (p ? p.price : 0) * (Number(l.qty) || 0); }, 0);
+    const newDiscountNum = Math.max(0, Math.min(Number(newForm.discount) || 0, newTotal));
+
+    const sortMeta = SORT_FIELD_BY_KEY[sortField] || SORT_FIELDS[0];
+
+    return {
+      chips, stripDays, calendarCells, displayRows, rowCount, stats, statusSegments, productMix, balanceList,
+      countLabel: rowCount + (rowCount === 1 ? ' booking' : ' bookings'),
+      noRowsMessage: selectedDate ? 'No bookings scheduled for ' + formatDate(selectedDate) + '.' : 'No bookings match your filters.',
+      // Compact rows show only the time when the date is already clear (date header or a selected date).
+      compactTimeOnly: showGroups || !!selectedDate,
+      dashScope, dashTotalItems,
+      balanceMoreLabel: extraBalanceCount > 0 ? '+' + extraBalanceCount + ' more' : '',
+      hasDateFilter: !!selectedDate, showKitchenLoad, kitchen,
+      cols: {
+        customer: visibleColumns.customer !== false, product: visibleColumns.product !== false,
+        cookingTime: visibleColumns.cookingTime !== false, pickup: visibleColumns.pickup !== false,
+        status: visibleColumns.status !== false, total: visibleColumns.total !== false, paid: visibleColumns.paid !== false
+      },
+      sortMeta, sortLabel: sortMeta.label + ' · ' + (sortDir === 'asc' ? sortMeta.ascLabel : sortMeta.descLabel),
+      calendarLabel: MONTHS_FULL[calMonth] + ' ' + calYear,
+      stripAtStart: stripStart <= MIN_SCHEDULABLE_DATE,
+      stripAtEnd: stripStart >= addDays(MAX_SCHEDULABLE_DATE, -9),
+      calendarAtMinMonth: calendarMonth <= MIN_SCHEDULABLE_DATE.slice(0, 7),
+      calendarAtMaxMonth: calendarMonth >= MAX_SCHEDULABLE_DATE.slice(0, 7),
+      schedulableRangeLabel: formatDateShort(MIN_SCHEDULABLE_DATE) + ' – ' + formatDateShort(MAX_SCHEDULABLE_DATE),
+      confirm: confirm ? { title: 'Update status?', message: 'Mark booking ' + confirm.bookingId + ' as ' + confirm.nextStatusLabel + '?', actionLabel: confirm.actionLabel } : null,
+      detail, isNewForm: !!drawer && drawer.type === 'new',
+      lineItems,
+      newTotalLabel: formatMoney(newTotal), newHasDiscount: newDiscountNum > 0,
+      newDiscountLabel: '−' + formatMoney(newDiscountNum), newNetTotalLabel: formatMoney(newTotal - newDiscountNum)
+    };
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Templates
+  // ---------------------------------------------------------------------------------
+  function pill(label, color) {
+    return `<span class="pill" style="background:color-mix(in srgb, ${color} 16%, var(--surface)); color:${color};"><span class="pill-dot" style="background:${color};"></span>${esc(label)}</span>`;
+  }
+
+  function renderTopbar() {
+    return `
+      <header class="topbar"><div class="topbar-inner">
+        <div class="brand-mark"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${ICONS.flame}</svg></div>
+        <div class="topbar-titles"><h1>Bookings</h1><span class="sub">${formatDateHeader(TODAY)}</span></div>
+      </div></header>`;
+  }
+
+  function renderBottomNav() {
+    return `
+      <nav class="bottomnav" aria-label="Main"><div class="bottomnav-inner">
+        <a class="navitem active" href="bookings-prototype.html" aria-current="page">${icon(ICONS.list, 22)}<span>Bookings</span></a>
+        <a class="navitem" href="menu-prototype.html">${icon(ICONS.flame, 22)}<span>Menu</span></a>
+        <a class="navitem" href="settings-prototype.html">${icon(ICONS.gear, 22)}<span>Settings</span></a>
+      </div></nav>`;
+  }
+
+  function renderDateBar(vm) {
+    const days = vm.stripDays.map((d) => `
+      <button type="button" class="day ${d.isToday ? 'today' : ''} ${d.isSelected ? 'selected' : ''}" data-action="select-date" data-date="${d.day}" aria-pressed="${d.isSelected}" aria-label="${formatDateHeader(d.day)}${d.count ? ', ' + d.count + ' bookings' : ''}" ${d.inRange ? '' : 'disabled'}>
+        <span class="day-wd">${d.weekdayLabel}</span><span class="day-num">${d.dayNum}</span>
+        ${d.count ? `<span class="day-badge">${d.count}</span>` : ''}
+      </button>`).join('');
+    return `
+      <div class="datebar">
+        <button type="button" class="all-chip ${state.selectedDate ? '' : 'active'}" data-action="clear-date" aria-pressed="${!state.selectedDate}">All</button>
+        <div class="strip no-scrollbar" data-scroll-key="strip">
+          <button type="button" class="strip-arrow" data-action="shift-strip" data-delta="-7" aria-label="Previous week" ${vm.stripAtStart ? 'disabled' : ''}>${icon(ICONS.chevLeft, 16)}</button>
+          ${days}
+          <button type="button" class="strip-arrow" data-action="shift-strip" data-delta="7" aria-label="Next week" ${vm.stripAtEnd ? 'disabled' : ''}>${icon(ICONS.chevron, 16)}</button>
+        </div>
+        <button type="button" class="cal-btn ${state.selectedDate ? 'has-date' : ''}" data-action="open-sheet" data-sheet="calendar" aria-label="Pick a date">${icon(ICONS.calendar, 20)}</button>
+      </div>`;
+  }
+
+  function renderTabs() {
+    return `
+      <div class="segmented" role="tablist">
+        <button type="button" role="tab" class="seg ${state.activeTab === 'dashboard' ? 'active' : ''}" aria-selected="${state.activeTab === 'dashboard'}" data-action="set-tab" data-tab="dashboard">Dashboard</button>
+        <button type="button" role="tab" class="seg ${state.activeTab === 'list' ? 'active' : ''}" aria-selected="${state.activeTab === 'list'}" data-action="set-tab" data-tab="list">Booking list</button>
+      </div>`;
+  }
+
+  function renderKitchenChart(k) {
+    const sel = state.kitchenSel;
+    const yLabels = k.yTicks.map((t) => `<text class="ktick" x="${k.axisW - 6}" y="${(t.y + 3.5).toFixed(1)}" text-anchor="end">${t.label}</text>`).join('');
+    const grid = k.yTicks.map((t) => `<line class="kgrid" x1="0" x2="${k.plotRight}" y1="${t.y.toFixed(1)}" y2="${t.y.toFixed(1)}"></line>`).join('');
+    const bars = k.bars.map((b) => `
+      <rect class="kbar ${sel === b.index ? 'sel' : ''}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${Math.max(0.5, b.width - 1).toFixed(1)}" height="${b.height.toFixed(1)}" rx="2"></rect>
+      ${b.showLabel ? `<text class="kcount" x="${(b.x + b.width / 2).toFixed(1)}" y="${(b.y - 5).toFixed(1)}" text-anchor="middle">${b.count}</text>` : ''}
+      <rect class="khit" data-action="kitchen-bar" data-index="${b.index}" x="${b.x.toFixed(1)}" y="${k.plotTop}" width="${b.width.toFixed(1)}" height="${(k.baseY - k.plotTop).toFixed(1)}"><title>${esc(b.tooltip)}</title></rect>`).join('');
+    const xTicks = k.xTicks.map((t) => `<line class="kaxis" x1="${t.x.toFixed(1)}" x2="${t.x.toFixed(1)}" y1="${k.baseY.toFixed(1)}" y2="${(k.baseY + 3).toFixed(1)}"></line><text class="ktick" x="${t.x.toFixed(1)}" y="${(k.baseY + 16).toFixed(1)}" text-anchor="${t.anchor}">${t.label}</text>`).join('');
+    const nowLine = k.nowX != null ? `<line class="know" x1="${k.nowX.toFixed(1)}" x2="${k.nowX.toFixed(1)}" y1="${(k.plotTop - 8).toFixed(1)}" y2="${k.baseY.toFixed(1)}"></line>` : '';
+    const selected = sel != null ? k.bars.find((b) => b.index === sel) : null;
+    return `
+      <div class="kchart">
+        <svg class="kchart-axis" width="${k.axisW}" height="${k.CH}" aria-hidden="true">${yLabels}</svg>
+        <div class="kchart-scroll" data-scroll-key="${k.scrollKey}" data-open-scroll="${k.openScroll.toFixed(1)}">
+          <svg width="${k.plotWidth}" height="${k.CH}" role="img" aria-label="Kitchen load: items cooking at once from 12 AM to 11:59 PM">
+            ${grid}
+            ${bars}
+            ${nowLine}
+            <line class="kaxis" x1="0" x2="${k.plotRight}" y1="${k.baseY.toFixed(1)}" y2="${k.baseY.toFixed(1)}"></line>
+            ${xTicks}
+          </svg>
+        </div>
+      </div>
+      <div class="kchart-cap">Time of day${k.nowX != null ? ' · dashed line = now' : ''}</div>
+      <div class="kreadout" aria-live="polite">${selected ? `<b>${selected.count} cooking</b> · ${selected.startLabel} – ${selected.endLabel}` : 'Tap a bar to see its time window.'}</div>`;
+  }
+
+  function renderDashboard(vm) {
+    const kpis = `<section class="kpi-grid">${vm.stats.map((s) => `<div class="kpi"><span class="kpi-label">${s.label}</span><span class="kpi-value">${s.value}</span></div>`).join('')}</section>`;
+
+    const breakdown = vm.hasDateFilter ? `
+      <section class="card">
+        <div class="card-head"><h2 class="card-title">Status breakdown</h2><span class="card-cap">${vm.dashTotalItems} ${vm.dashTotalItems === 1 ? 'booking' : 'bookings'}</span></div>
+        ${vm.dashTotalItems > 0 ? `
+          <div class="stack-bar">${vm.statusSegments.filter((s) => s.visible).map((s) => `<span style="width:${s.widthPct}%; background:${s.color};"></span>`).join('')}</div>
+          <div class="legend">${vm.statusSegments.filter((s) => s.visible).map((s) => `<span class="legend-item"><span class="pill-dot" style="background:${s.color}; width:8px; height:8px;"></span>${s.label} <b class="mono">${s.count}</b></span>`).join('')}</div>`
+        : `<div class="empty" style="padding:20px 12px;">No bookings on this date.</div>`}
+      </section>` : '';
+
+    const kitchen = vm.showKitchenLoad ? `
+      <section class="card">
+        <div class="card-head"><h2 class="card-title">Kitchen load</h2><span class="card-cap">Items cooking (count)</span></div>
+        ${vm.kitchen.hasData ? renderKitchenChart(vm.kitchen) : `<div class="empty" style="padding:20px 12px;">No pending or cooking items scheduled for this date.</div>`}
+      </section>` : '';
+
+    const mix = `
+      <section class="card">
+        <div class="card-head"><h2 class="card-title">Product mix</h2></div>
+        ${vm.productMix.length ? `<div class="mix-list">${vm.productMix.map((p) => `
+          <div class="mix-row"><span>${esc(p.name)}</span><b class="mono">${p.count}</b><div class="mix-bar"><span style="width:${p.widthPct}%;"></span></div></div>`).join('')}</div>`
+        : `<div class="empty" style="padding:20px 12px;">No bookings in this view.</div>`}
+      </section>`;
+
+    const balances = `
+      <section class="card">
+        <div class="card-head"><h2 class="card-title">Balance due</h2></div>
+        ${vm.balanceList.length ? `<div>${vm.balanceList.map((b) => `
+          <div class="bal-row"><div style="min-width:0;"><div class="bal-name">${esc(b.customer)}</div><div class="card-cap">${b.dateLabel}</div></div><b class="mono" style="color:var(--status-cooking); white-space:nowrap;">${b.balanceLabel}</b></div>`).join('')}
+          ${vm.balanceMoreLabel ? `<div class="card-cap" style="padding-top:8px;">${vm.balanceMoreLabel}</div>` : ''}</div>`
+        : `<div class="empty" style="padding:20px 12px;">Everyone's paid up in this view.</div>`}
+      </section>`;
+
+    return kpis + breakdown + kitchen + mix + balances;
+  }
+
+  // "1 of 2" tag after the booking ID when the order has more than one booking. Money on
+  // the card is the whole order's, so this tells the reader it's shared with other cards.
+  function orderTag(r) {
+    return r.orderCount > 1 ? `<span class="order-tag" aria-hidden="true">${r.orderPos} of ${r.orderCount}</span>` : '';
+  }
+  function orderPartLabel(r) {
+    return r.orderCount > 1 ? `, ${r.orderPos} of ${r.orderCount} in this order` : '';
+  }
+
+  function renderBookingCard(r, cols, opts) {
+    opts = opts || {};
+    const showProductLine = cols.product || cols.cookingTime;
+    const productLine = showProductLine ? `<div class="bcard-product">${cols.product ? esc(r.product) : ''}${cols.cookingTime ? `<span class="muted">${cols.product ? ' · ' : ''}${r.cookingTimeLabel}</span>` : ''}</div>` : '';
+    const money = (cols.total || cols.paid) ? `
+      <div class="bcard-money">
+        ${cols.total ? `<span><span class="muted">Order</span> <b>${r.totalLabel}</b>${r.hasDiscount ? ` <span class="was">${r.grossTotalLabel}</span>` : ''}</span>` : ''}
+        ${cols.paid ? `<span><span class="muted">Paid</span> <b>${r.paidLabel}</b></span>` : ''}
+      </div>` : '';
+    return `
+      <article class="bcard ${opts.expanded ? 'expanded' : ''}" data-action="open-detail" data-id="${r.id}" role="button" tabindex="0" aria-label="Booking ${r.id}${orderPartLabel(r)}">
+        <div class="bcard-top"><span class="bid">${r.id}${orderTag(r)}</span><span class="bcard-top-right">${cols.status ? pill(r.statusLabel, r.statusColor) : ''}${opts.expanded ? `<button type="button" class="collapse-btn" data-action="toggle-expand" data-id="${r.id}" aria-expanded="true" aria-label="Collapse ${r.id}">${icon(ICONS.chevUp, 16)}</button>` : ''}</span></div>
+        ${productLine}
+        ${cols.customer ? `<div class="bcard-line">${icon(ICONS.person, 15)}<span>${esc(r.customer)}</span></div>` : ''}
+        ${cols.pickup ? `<div class="bcard-line">${icon(ICONS.clock, 15)}<span>${r.pickupLabel}</span></div>` : ''}
+        ${money}
+        ${r.canAdvance ? `<div class="bcard-actions"><button type="button" class="btn btn-sm" data-action="request-advance" data-id="${r.id}">${icon(ICONS.check, 15)} ${r.advanceTitle}</button></div>` : ''}
+      </article>`;
+  }
+
+  // Compact view row: booking ID + pickup time only. Tapping it expands the row into the
+  // full card (same card as the detailed view); tapping the expanded card opens the detail.
+  function renderCompactRow(r, vm) {
+    if (state.expanded[r.id]) return renderBookingCard(r, vm.cols, { expanded: true });
+    return `
+      <button type="button" class="crow" data-action="toggle-expand" data-id="${r.id}" aria-expanded="false" aria-label="Booking ${r.id}${orderPartLabel(r)}, pickup ${vm.compactTimeOnly ? r.pickupTimeLabel : r.pickupLabel}. Show details">
+        <span class="bid">${r.id}${orderTag(r)}</span>
+        <span class="crow-time">${icon(ICONS.clock, 15)}${vm.compactTimeOnly ? r.pickupTimeLabel : r.pickupLabel}</span>
+        <span class="crow-chev">${icon(ICONS.chevDown, 16)}</span>
+      </button>`;
+  }
+
+  function renderResults(vm) {
+    if (vm.rowCount === 0) return `<div class="empty">${esc(vm.noRowsMessage)}</div>`;
+    const compact = state.listView === 'compact';
+    return `<div class="bcard-list ${compact ? 'compact' : ''}">${vm.displayRows.map((r) => (r.isHeader
+      ? `<div class="group-head"><span>${r.dateLabel}${r.isToday ? '<span class="today-pill">Today</span>' : ''}</span><span class="muted">${r.countLabel}</span></div>`
+      : (compact ? renderCompactRow(r, vm) : renderBookingCard(r, vm.cols)))).join('')}</div>`;
+  }
+
+  function renderList(vm) {
+    return `
+      <label class="search">
+        <span class="sr-only">Search bookings</span>
+        ${icon(ICONS.search, 16)}
+        <input class="input" type="search" enterkeyhint="search" data-input="search" value="${esc(state.search)}" placeholder="Search ID, product, or customer" autocomplete="off" />
+      </label>
+      <div class="chip-row no-scrollbar" data-scroll-key="chips">
+        ${vm.chips.map((c) => `<button type="button" class="chip ${c.active ? 'active' : ''}" data-action="set-status-filter" data-key="${c.key}" aria-pressed="${c.active}">${c.label}</button>`).join('')}
+      </div>
+      <div class="list-meta">
+        <span class="muted" data-region="count">${vm.countLabel}</span>
+        <div class="list-meta-actions">
+          <div class="view-toggle" role="radiogroup" aria-label="List view">
+            <button type="button" role="radio" class="${state.listView === 'detailed' ? 'active' : ''}" aria-checked="${state.listView === 'detailed'}" aria-label="Detailed cards" title="Detailed cards" data-action="set-list-view" data-view="detailed">${icon(ICONS.viewCards, 16)}</button>
+            <button type="button" role="radio" class="${state.listView === 'compact' ? 'active' : ''}" aria-checked="${state.listView === 'compact'}" aria-label="Compact list" title="Compact list" data-action="set-list-view" data-view="compact">${icon(ICONS.viewCompact, 16)}</button>
+          </div>
+          <button type="button" class="meta-btn" data-action="open-sheet" data-sheet="sort">${icon(state.sortDir === 'asc' ? ICONS.sortAsc : ICONS.sortDesc, 14)}<span>${esc(vm.sortMeta.label)}</span></button>
+        </div>
+      </div>
+      <div data-region="results">${renderResults(vm)}</div>`;
+  }
+
+  function renderMain(vm) {
+    return `
+      <main class="content">
+        ${renderDateBar(vm)}
+        <div class="scope">Showing <strong>${esc(vm.dashScope)}</strong></div>
+        ${renderTabs()}
+        ${state.activeTab === 'dashboard' ? renderDashboard(vm) : renderList(vm)}
+      </main>`;
+  }
+
+  // ---- full-screen sheets ----
+  function renderDetailSheet(d) {
+    const ok = d.orderKey;
+    let pay = `<div class="drow"><span class="k">Total amount</span><span class="v mono">${d.totalLabel}</span></div>`;
+    if (d.showApplyDiscountLink) pay += `<div class="link-row"><button type="button" class="link-btn" data-action="open-discount" data-order-key="${ok}">+ Apply discount</button></div>`;
+    if (d.showDiscountRow) {
+      pay += `<div class="drow"><span class="k">Discount${d.canEditDiscount ? ` <button type="button" class="text-btn" data-action="open-discount" data-order-key="${ok}">Edit</button><button type="button" class="text-btn" data-action="remove-discount" data-order-key="${ok}">Remove</button>` : ''}</span><span class="v mono" style="color:var(--status-cooked);">${d.discountLabel}</span></div>
+              <div class="drow"><span class="k">Net total</span><span class="v mono">${d.netTotalLabel}</span></div>`;
+    }
+    if (d.discountEditing) {
+      pay += `
+        <div class="inline-editor">
+          <label class="field-label" for="discount-input">Discount amount</label>
+          <span class="money-input"><span class="prefix">₱</span><input id="discount-input" class="input" type="number" inputmode="decimal" min="0" data-input="discount-draft" value="${esc(d.discountDraftValue)}" placeholder="0" /></span>
+          <span class="caption">Can't be more than the order total (${d.maxDiscountLabel}).</span>
+          <div class="inline-row"><button type="button" class="btn btn-sm" data-action="cancel-discount">Cancel</button><button type="button" class="btn btn-sm btn-primary" data-action="save-discount">Save discount</button></div>
+        </div>`;
+    }
+    pay += `<div class="drow"><span class="k">Amount paid</span><span class="v mono">${d.paidLabel}</span></div>`;
+    if (d.showRecordPaymentLink) pay += `<div class="link-row"><button type="button" class="link-btn" data-action="open-payment" data-order-key="${ok}">+ Record payment</button></div>`;
+    if (d.paymentEditing) {
+      pay += `
+        <div class="inline-editor">
+          <label class="field-label" for="payment-input">Payment received</label>
+          <span class="money-input"><span class="prefix">₱</span><input id="payment-input" class="input" type="number" inputmode="decimal" min="0" data-input="payment-draft" value="${esc(d.paymentDraftValue)}" placeholder="0" /></span>
+          <span class="caption">Added to what's already been paid. Change it for a partial payment.</span>
+          <div class="inline-row"><button type="button" class="btn btn-sm" data-action="cancel-payment">Cancel</button><button type="button" class="btn btn-sm btn-primary" data-action="save-payment">Save payment</button></div>
+        </div>`;
+    }
+    pay += `<div class="drow big"><span class="k" style="color:var(--fg); font-weight:700;">Balance due</span><span class="v mono" style="color:${d.balanceColor};">${d.balanceLabel}</span></div>`;
+    if (d.showDiscountRemainingBalance) {
+      pay += `
+        <div class="writeoff">
+          <span>Only <b class="mono">${d.balanceLabel}</b> left (${d.remainingBalancePctLabel} of total)</span>
+          <button type="button" class="btn btn-sm" data-action="discount-remaining" data-order-key="${ok}">Discount remaining balance</button>
+        </div>`;
+    }
+
+    const siblings = d.siblings.length ? `
+      <section class="card">
+        <p class="dsec-title">Also in this order</p>
+        <div class="sib-list">${d.siblings.map((s) => `
+          <button type="button" class="sib" data-action="open-detail" data-id="${s.id}">
+            <span class="sib-text"><span class="bid">${s.id}</span><span>${esc(s.product)}</span></span>
+            ${pill(s.statusLabel, s.statusColor)}
+          </button>`).join('')}</div>
+      </section>` : '';
+
+    const footer = (d.showCancel || d.showAdvance) ? `
+      <div class="sheet-footer">
+        ${d.showCancel ? `<button type="button" class="btn btn-danger" data-action="cancel-order" data-id="${d.id}">${d.cancelLabel}</button>` : ''}
+        ${d.showAdvance ? `<button type="button" class="btn btn-primary" data-action="advance" data-id="${d.id}">${icon(ICONS.check, 16)} ${d.advanceLabel}</button>` : ''}
+      </div>` : '';
+
+    return `
+      <div class="backdrop" data-action="close-drawer"></div>
+      <div class="sheet full" role="dialog" aria-modal="true" aria-label="Booking ${d.id}">
+        <div class="sheet-header">
+          <button type="button" class="icon-btn" data-action="close-drawer" aria-label="Back">${icon(ICONS.back, 20)}</button>
+          <span class="sheet-title mono">${d.id}</span>
+          ${pill(d.statusLabel, d.statusColor)}
+          <span style="width:6px;"></span>
+        </div>
+        <div class="sheet-body" data-scroll-key="detail-${d.id}">
+          <section class="card">
+            <p class="dsec-title">Booking</p>
+            <div class="drow"><span class="k">Product</span><span class="v">${esc(d.product)}</span></div>
+            <div class="drow"><span class="k">Cooking time</span><span class="v">${d.cookingTimeLabel}</span></div>
+            <div class="drow"><span class="k">Pickup</span><span class="v">${d.pickupLabel}</span></div>
+          </section>
+          <section class="card">
+            <p class="dsec-title">Customer</p>
+            <div class="drow"><span class="k">Name</span><span class="v">${esc(d.customer)}</span></div>
+            <div class="drow"><span class="k">Phone</span><span class="v">${d.phone ? `<a class="tel" href="tel:${esc(d.phone.replace(/\s+/g, ''))}">${esc(d.phone)}</a>` : '<span class="muted" style="font-weight:500;">Not on file</span>'}</span></div>
+          </section>
+          <section class="card">
+            <p class="dsec-title">Payment</p>
+            ${pay}
+          </section>
+          ${siblings}
+          ${d.cancelBlocked ? '<p class="caption">This order can\'t be cancelled: part of it is already cooked or completed.</p>' : ''}
+        </div>
+        ${footer}
+      </div>`;
+  }
+
+  function renderNewSheet(vm) {
+    const f = state.newForm;
+    const lines = vm.lineItems.map((l) => `
+      <div class="line-card">
+        <div class="line-head">
+          <span class="group-label">Item ${l.index + 1}</span>
+          <button type="button" class="text-btn" data-action="remove-line" data-index="${l.index}">${vm.lineItems.length > 1 ? 'Remove' : 'Reset'}</button>
+        </div>
+        <div class="prod-scroll no-scrollbar" data-scroll-key="line-${l.index}" role="radiogroup" aria-label="Product">
+          ${l.productCards.map((p) => `
+            <button type="button" class="prod-card ${p.selected ? 'selected' : ''}" role="radio" aria-checked="${p.selected}" data-action="select-line-product" data-index="${l.index}" data-product="${esc(p.name)}">
+              <span class="prod-name">${esc(p.name)}</span><span class="prod-meta">${p.cookingTimeLabel}</span><span class="prod-price">${p.priceLabel}</span>
+            </button>`).join('')}
+        </div>
+        <div class="line-foot">
+          <div class="stepper">
+            <button type="button" data-action="qty-step" data-index="${l.index}" data-delta="-1" aria-label="Fewer">−</button>
+            <input type="number" inputmode="numeric" min="1" step="1" aria-label="Quantity" data-input="line-qty" data-index="${l.index}" value="${esc(l.qty)}" />
+            <button type="button" data-action="qty-step" data-index="${l.index}" data-delta="1" aria-label="More">+</button>
+          </div>
+          <div class="subtotal"><span class="caption">Subtotal</span><span class="mono" data-region="line-subtotal" data-index="${l.index}">${l.subtotalLabel}</span></div>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="backdrop" data-action="close-drawer"></div>
+      <div class="sheet full" role="dialog" aria-modal="true" aria-label="New booking">
+        <div class="sheet-header">
+          <button type="button" class="icon-btn" data-action="close-drawer" aria-label="Close">${icon(ICONS.close, 20)}</button>
+          <span class="sheet-title">New booking</span>
+        </div>
+        <form class="sheet-body" id="new-booking-form" data-form="new-booking" data-scroll-key="new-booking" novalidate>
+          <label class="field">
+            <span class="field-label">Customer name <span class="opt">(optional)</span></span>
+            <input class="input" type="text" data-input="new.customerName" value="${esc(f.customerName)}" placeholder="Leave blank for a walk-in" autocomplete="off" enterkeyhint="next" />
+          </label>
+          <label class="field">
+            <span class="field-label">Phone <span class="opt">(optional)</span></span>
+            <input class="input" type="tel" inputmode="tel" data-input="new.phone" value="${esc(f.phone)}" placeholder="0917 000 0000" autocomplete="off" />
+          </label>
+          ${renderPickupPicker()}
+          <p class="group-label" style="margin-top:4px;">Items</p>
+          ${lines}
+          <button type="button" class="btn btn-dashed" data-action="add-line">${icon(ICONS.plus, 16)} Add another item</button>
+          <div class="sum-card">
+            <div class="sum-row"><span>Order total</span><span class="mono" data-region="new-total">${vm.newTotalLabel}</span></div>
+            <label class="field">
+              <span class="field-label">Discount <span class="opt">(optional)</span></span>
+              <span class="money-input"><span class="prefix">₱</span><input class="input" type="number" inputmode="decimal" min="0" data-input="new.discount" value="${esc(f.discount)}" placeholder="0" /></span>
+            </label>
+            <div data-region="new-net">${renderNewNet(vm)}</div>
+            <label class="field">
+              <span class="field-label">Amount paid now <span class="opt">(optional)</span></span>
+              <span class="money-input"><span class="prefix">₱</span><input class="input" type="number" inputmode="decimal" min="0" data-input="new.amountPaid" value="${esc(f.amountPaid)}" placeholder="0" /></span>
+            </label>
+          </div>
+        </form>
+        <div class="sheet-footer">
+          <button type="button" class="btn" data-action="close-drawer" style="flex:0 0 auto;">Cancel</button>
+          <button type="button" class="btn btn-primary" data-action="create-booking" data-region="new-submit">${renderNewSubmit(vm)}</button>
+        </div>
+      </div>`;
+  }
+  // Pickup date & time: date and time are separate parts so they can't be mixed up.
+  function renderPickupPicker() {
+    const f = state.newForm;
+    const tomorrow = addDays(TODAY, 1);
+    const hours = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      .map((h) => `<option value="${h}" ${h === Number(f.pickupHour) ? 'selected' : ''}>${h}</option>`).join('');
+    const bad = minuteOutOfRange(f.pickupMinute);
+    const quickDay = (d, label) => `<button type="button" class="chip ${f.pickupDate === d ? 'active' : ''}" data-action="set-pickup-date" data-date="${d}" aria-pressed="${f.pickupDate === d}">${label} · ${weekdayOf(d)} ${parseInt(d.slice(8, 10), 10)}</button>`;
+    return `
+          <p class="group-label" style="margin-top:4px;">Pickup</p>
+          <div class="pickup-card">
+            <div class="pk-part">
+              <p class="pk-label" id="pk-date-label">${icon(ICONS.calendar, 15)} Date</p>
+              <button type="button" class="date-btn" data-action="open-pickup-calendar" aria-haspopup="dialog" aria-labelledby="pk-date-label pk-date-value">
+                <span class="cal-ico">${icon(ICONS.calendar, 18)}</span>
+                <span id="pk-date-value">${formatDateHeader(f.pickupDate)}</span>
+                <span class="trail">${icon(ICONS.chevDown, 16)}</span>
+              </button>
+              <div class="quick-row">${quickDay(TODAY, 'Today')}${quickDay(tomorrow, 'Tomorrow')}</div>
+            </div>
+            <div class="pk-part">
+              <p class="pk-label">${icon(ICONS.clock, 15)} Time</p>
+              <div class="time-row">
+                <span class="hour-select">
+                  <select class="input" aria-label="Hour" data-input="new.pickupHour">${hours}</select>
+                  <span class="caret">${icon(ICONS.chevDown, 16)}</span>
+                </span>
+                <span class="time-sep" aria-hidden="true">:</span>
+                <input class="input minute-input ${bad ? 'invalid' : ''}" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done"
+                  aria-label="Minutes, 00 to 59" aria-describedby="pk-min-error" data-input="new.pickupMinute" value="${esc(f.pickupMinute)}" placeholder="00" />
+                <div class="segmented" role="radiogroup" aria-label="AM or PM">
+                  <button type="button" role="radio" class="seg ${f.pickupPeriod === 'AM' ? 'active' : ''}" aria-checked="${f.pickupPeriod === 'AM'}" data-action="set-pickup-period" data-period="AM">AM</button>
+                  <button type="button" role="radio" class="seg ${f.pickupPeriod === 'PM' ? 'active' : ''}" aria-checked="${f.pickupPeriod === 'PM'}" data-action="set-pickup-period" data-period="PM">PM</button>
+                </div>
+              </div>
+              <p class="form-error" id="pk-min-error" role="alert" data-region="minute-error">${bad ? 'Minutes go from 00 to 59.' : ''}</p>
+            </div>
+            <div class="pk-summary" data-region="pickup-summary" aria-live="polite">${renderPickupSummary()}</div>
+          </div>`;
+  }
+  function renderPickupSummary() {
+    const f = state.newForm;
+    const at = composePickupAt(f);
+    return `<span class="pk-summary-main">${icon(ICONS.check, 15)}<span>Pickup <b>${formatDateHeader(f.pickupDate)}</b> at <b class="mono">${formatTime(at)}</b></span></span>`
+      + (at < nowOnToday() ? '<span class="pk-warn">This time has already passed.</span>' : '');
+  }
+
+  function renderNewNet(vm) {
+    return vm.newHasDiscount ? `<div class="sum-row big"><span>Net total</span><span class="mono">${vm.newNetTotalLabel}</span></div>` : '';
+  }
+  function renderNewSubmit(vm) { return 'Create booking · ' + vm.newNetTotalLabel; }
+
+  // ---- bottom sheets ----
+  function bottomSheet(title, body) {
+    return `
+      <div class="backdrop top-layer" data-action="close-sheet"></div>
+      <div class="sheet bottom top-layer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-header"><span class="sheet-title">${esc(title)}</span><button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon(ICONS.close, 18)}</button></div>
+        <div class="sheet-body" data-scroll-key="bottom-sheet">${body}</div>
+      </div>`;
+  }
+
+  function renderSortSheet(vm) {
+    return bottomSheet('Sort bookings', `
+      <div>${SORT_FIELDS.map((f) => `<button type="button" class="menu-row ${f.key === state.sortField ? 'selected' : ''}" data-action="set-sort-field" data-field="${f.key}">${f.label}<span class="trail">${f.key === state.sortField ? icon(ICONS.check, 18) : ''}</span></button>`).join('')}</div>
+      <div class="segmented" role="group" aria-label="Direction">
+        <button type="button" class="seg ${state.sortDir === 'asc' ? 'active' : ''}" data-action="set-sort-dir" data-dir="asc">${vm.sortMeta.ascLabel}</button>
+        <button type="button" class="seg ${state.sortDir === 'desc' ? 'active' : ''}" data-action="set-sort-dir" data-dir="desc">${vm.sortMeta.descLabel}</button>
+      </div>
+      <p class="caption">Bookings are grouped by date only when showing all dates sorted by pickup time.</p>
+      <button type="button" class="btn btn-primary" data-action="close-sheet">Done</button>`);
+  }
+
+  function renderCalendarSheet(vm) {
+    const forPickup = state.calendarFor === 'pickup';
+    const cells = vm.calendarCells.map((c) => {
+      if (!c.inMonth) return '<span></span>';
+      return `<button type="button" class="cal-cell ${c.isToday ? 'today' : ''} ${c.isSelected ? 'selected' : ''}" data-action="${forPickup ? 'set-pickup-date' : 'select-date'}" data-date="${c.dateStr}" ${c.inRange ? '' : 'disabled'} aria-label="${formatDateHeader(c.dateStr)}">${c.day}${c.hasBookings ? '<span class="cal-dot"></span>' : ''}</button>`;
+    }).join('');
+    return bottomSheet(forPickup ? 'Pickup date' : 'Pick a date', `
+      <div class="cal-head">
+        <button type="button" class="icon-btn" data-action="shift-month" data-delta="-1" aria-label="Previous month" ${vm.calendarAtMinMonth ? 'disabled' : ''}>${icon(ICONS.chevLeft, 16)}</button>
+        <span class="cal-label">${vm.calendarLabel}</span>
+        <button type="button" class="icon-btn" data-action="shift-month" data-delta="1" aria-label="Next month" ${vm.calendarAtMaxMonth ? 'disabled' : ''}>${icon(ICONS.chevron, 16)}</button>
+      </div>
+      <div class="cal-grid">${WEEKDAYS.map((w) => `<span class="cal-wd">${w}</span>`).join('')}${cells}</div>
+      <div class="inline-row">
+        ${forPickup
+          ? `<button type="button" class="btn" data-action="set-pickup-date" data-date="${TODAY}">Today</button><button type="button" class="btn" data-action="set-pickup-date" data-date="${addDays(TODAY, 1)}">Tomorrow</button>`
+          : `<button type="button" class="btn" data-action="jump-today">Today</button>${state.selectedDate ? '<button type="button" class="btn" data-action="clear-date">Clear date</button>' : ''}`}
+      </div>
+      <p class="caption" style="text-align:center;">${forPickup ? 'Dots mark days that already have bookings. ' : ''}Scheduling window: ${vm.schedulableRangeLabel}</p>`);
+  }
+
+  function renderConfirm(c) {
+    return `
+      <div class="dialog-backdrop" data-action="cancel-confirm"></div>
+      <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <h2 id="confirm-title">${esc(c.title)}</h2>
+        <p>${esc(c.message)}</p>
+        <div class="dialog-actions">
+          <button type="button" class="btn" data-action="cancel-confirm">Cancel</button>
+          <button type="button" class="btn btn-primary" data-action="confirm-advance">${esc(c.actionLabel)}</button>
+        </div>
+      </div>`;
+  }
+
+  // "Booking created" popup. The backdrop has no action on purpose: only Done (or the
+  // Back button / Escape) closes it.
+  function renderCreated(c) {
+    const n = c.items.length;
+    const title = n === 1 ? 'Booking created' : n + ' bookings created';
+    const ids = n === 1
+      ? `<div class="created-id single"><span class="mono">${esc(c.items[0].id)}</span><span class="prod">${esc(c.items[0].product)}</span></div>`
+      : c.items.map((it) => `<div class="created-id"><span class="mono">${esc(it.id)}</span><span class="prod">${esc(it.product)}</span></div>`).join('');
+    return `
+      <div class="dialog-backdrop"></div>
+      <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="created-title" aria-describedby="created-ids">
+        <div class="created-head">
+          <span class="created-icon">${icon(ICONS.check, 22)}</span>
+          <h2 id="created-title">${esc(title)}</h2>
+          <p class="created-meta">${esc(c.customer)} · Pickup ${esc(c.pickupLabel)}</p>
+        </div>
+        <div class="created-ids" id="created-ids" aria-label="${n === 1 ? 'Booking ID' : 'Booking IDs'}">${ids}</div>
+        <div class="dialog-actions">
+          <button type="button" id="created-done" class="btn btn-primary" data-action="close-created">Done</button>
+        </div>
+      </div>`;
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------------
+  const appEl = document.getElementById('app');
+
+  function renderRoot() {
+    const vm = computeViewModel();
+    let drawer = '';
+    if (vm.detail) drawer = renderDetailSheet(vm.detail);
+    else if (vm.isNewForm) drawer = renderNewSheet(vm);
+    let sheet = '';
+    if (state.sheet === 'sort') sheet = renderSortSheet(vm);
+    else if (state.sheet === 'calendar') sheet = renderCalendarSheet(vm);
+    appEl.innerHTML = `
+      <div class="app">
+        ${renderTopbar()}
+        ${renderMain(vm)}
+      </div>
+      ${state.drawer || state.created ? '' : `<button type="button" class="fab" data-action="open-new">${icon(ICONS.plus, 18)} New booking</button>`}
+      ${renderBottomNav()}
+      ${drawer}
+      ${sheet}
+      ${vm.confirm ? renderConfirm(vm.confirm) : ''}
+      ${state.created ? renderCreated(state.created) : ''}
+      ${renderPinPrompt()}
+      ${state.toast && !state.sheet && !state.confirm && !state.pinPrompt && !state.created ? `<div class="toast ${state.drawer ? 'over-footer' : ''}" role="status">${esc(state.toast)}</div>` : ''}`;
+    document.body.classList.toggle('no-scroll', !!(state.drawer || state.sheet || state.confirm || state.pinPrompt || state.created));
+  }
+
+  function render() {
+    const saved = {};
+    appEl.querySelectorAll('[data-scroll-key]').forEach((el) => { saved[el.dataset.scrollKey] = [el.scrollLeft, el.scrollTop]; });
+    const y = window.scrollY;
+    renderRoot();
+    appEl.querySelectorAll('[data-scroll-key]').forEach((el) => {
+      const s = saved[el.dataset.scrollKey];
+      if (el.dataset.scrollKey === 'strip' && state.resetStripScroll) return;
+      if (s) { el.scrollLeft = s[0]; el.scrollTop = s[1]; }
+      else if (el.dataset.openScroll) el.scrollLeft = parseFloat(el.dataset.openScroll); // kitchen chart: new date or width
+    });
+    state.resetStripScroll = false;
+    if (!state.drawer) window.scrollTo(0, y);
+    if (state.focusAfterRender) {
+      const el = document.getElementById(state.focusAfterRender);
+      state.focusAfterRender = null;
+      if (el) { el.focus(); if (el.select) try { el.select(); } catch (err) { /* ignore */ } }
+    }
+  }
+
+  // Typing redraws only the regions that depend on the typed value.
+  function renderRegions(names) {
+    const vm = computeViewModel();
+    names.forEach((name) => {
+      appEl.querySelectorAll('[data-region="' + name + '"]').forEach((el) => {
+        switch (name) {
+          case 'results': el.innerHTML = renderResults(vm); break;
+          case 'count': el.textContent = vm.countLabel; break;
+          case 'new-total': el.textContent = vm.newTotalLabel; break;
+          case 'new-net': el.innerHTML = renderNewNet(vm); break;
+          case 'new-submit': el.textContent = renderNewSubmit(vm); break;
+          case 'pickup-summary': el.innerHTML = renderPickupSummary(); break;
+          case 'minute-error': el.textContent = minuteOutOfRange(state.newForm.pickupMinute) ? 'Minutes go from 00 to 59.' : ''; break;
+          case 'line-subtotal': {
+            const line = vm.lineItems[parseInt(el.dataset.index, 10)];
+            if (line) el.textContent = line.subtotalLabel;
+            break;
+          }
+          default: break;
+        }
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Events
+  // ---------------------------------------------------------------------------------
+  appEl.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || el.disabled) return;
+    const d = el.dataset;
+    switch (d.action) {
+      case 'open-detail': Actions.openDetail(d.id); break;
+      case 'close-drawer': Actions.closeDrawer(); break;
+      case 'open-new': Actions.openNewForm(); break;
+      case 'open-sheet': Actions.openSheet(d.sheet); break;
+      case 'close-sheet': Actions.closeSheet(); break;
+      case 'set-sort-field': Actions.setSortField(d.field); break;
+      case 'set-sort-dir': Actions.setSortDir(d.dir); break;
+      case 'set-tab': Actions.setTab(d.tab); break;
+      case 'set-status-filter': Actions.setStatusFilter(d.key); break;
+      case 'select-date': Actions.selectDate(d.date); break;
+      case 'clear-date': Actions.clearDate(); break;
+      case 'shift-month': Actions.shiftMonth(parseInt(d.delta, 10)); break;
+      case 'jump-today': Actions.jumpToday(); break;
+      case 'shift-strip': Actions.shiftStrip(parseInt(d.delta, 10)); break;
+      case 'request-advance': Actions.requestAdvance(d.id); break;
+      case 'cancel-confirm': Actions.cancelConfirm(); break;
+      case 'confirm-advance': Actions.confirmAdvance(); break;
+      case 'advance': Actions.advanceStatus(d.id); break;
+      case 'cancel-order': Actions.cancelOrder(d.id); break;
+      case 'open-discount': Actions.openDiscountEditor(d.orderKey); break;
+      case 'cancel-discount': Actions.cancelDiscountEdit(); break;
+      case 'save-discount': Actions.saveDiscount(); break;
+      case 'remove-discount': Actions.removeDiscount(d.orderKey); break;
+      case 'discount-remaining': Actions.discountRemainingBalance(d.orderKey); break;
+      case 'open-payment': Actions.openPaymentEditor(d.orderKey); break;
+      case 'cancel-payment': Actions.cancelPaymentEdit(); break;
+      case 'save-payment': Actions.savePayment(); break;
+      case 'select-line-product': Actions.setLineProduct(parseInt(d.index, 10), d.product); break;
+      case 'qty-step': Actions.stepQty(parseInt(d.index, 10), parseInt(d.delta, 10)); break;
+      case 'add-line': Actions.addLineItem(); break;
+      case 'remove-line': Actions.removeLineItem(parseInt(d.index, 10)); break;
+      case 'kitchen-bar': Actions.selectKitchenBar(parseInt(d.index, 10)); break;
+      case 'set-list-view': Actions.setListView(d.view); break;
+      case 'pin-key': PinActions.key(d.digit); break;
+      case 'pin-back': PinActions.back(); break;
+      case 'pin-ok': PinActions.submit(); break;
+      case 'pin-cancel': PinActions.cancel(); break;
+      case 'toggle-expand': Actions.toggleExpand(d.id); break;
+      case 'close-created': Actions.closeCreated(); break;
+      case 'open-pickup-calendar': Actions.openPickupCalendar(); break;
+      case 'set-pickup-date': Actions.setPickupDate(d.date); break;
+      case 'set-pickup-period': Actions.setPickupPeriod(d.period); break;
+      case 'create-booking': Actions.submitNewBooking(); break;
+      default: break;
+    }
+  });
+
+  appEl.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('bcard')) {
+      e.preventDefault();
+      Actions.openDetail(e.target.dataset.id);
+      return;
+    }
+    // Enter in a New booking field creates the booking. Handled here instead of by native
+    // form submission, which sandboxed previews and some WebViews block silently.
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('[data-form="new-booking"]')) {
+      e.preventDefault();
+      // Enter/Done in the minutes field just finishes the time — it doesn't create the booking.
+      if (e.target.dataset.input === 'new.pickupMinute') { e.target.blur(); return; }
+      Actions.submitNewBooking();
+    }
+  });
+
+  appEl.addEventListener('input', (e) => {
+    const el = e.target;
+    const key = el.dataset && el.dataset.input;
+    if (!key) return;
+    if (key === 'search') { state.search = el.value; renderRegions(['results', 'count']); return; }
+    if (key === 'discount-draft') { if (state.discountDraft) state.discountDraft.value = el.value; return; }
+    if (key === 'payment-draft') { if (state.paymentDraft) state.paymentDraft.value = el.value; return; }
+    if (key === 'line-qty') {
+      const i = parseInt(el.dataset.index, 10);
+      const lines = state.newForm.lineItems.slice();
+      lines[i] = Object.assign({}, lines[i], { qty: el.value });
+      state.newForm.lineItems = lines;
+      renderRegions(['line-subtotal', 'new-total', 'new-net', 'new-submit']);
+      return;
+    }
+    if (key === 'new.pickupHour') {
+      state.newForm.pickupHour = parseInt(el.value, 10) || 12;
+      renderRegions(['pickup-summary']);
+      return;
+    }
+    if (key === 'new.pickupMinute') {
+      // Digits only, keeping the last two typed, so "00" + 7 → "07" and then + 5 → "75"
+      // even if the field's text wasn't selected first.
+      const clean = el.value.replace(/\D/g, '').slice(-2);
+      if (clean !== el.value) el.value = clean;
+      state.newForm.pickupMinute = clean;
+      el.classList.toggle('invalid', minuteOutOfRange(clean));
+      renderRegions(['pickup-summary', 'minute-error']);
+      return;
+    }
+    if (key.indexOf('new.') === 0) {
+      const field = key.slice(4);
+      state.newForm[field] = el.value;
+      if (field === 'discount') renderRegions(['new-net', 'new-submit']);
+    }
+  });
+
+  // Minutes: tidy up when the field is left — "7" → "07", "75" → "59", empty → "00".
+  appEl.addEventListener('change', (e) => {
+    const el = e.target;
+    if (!el.dataset || el.dataset.input !== 'new.pickupMinute') return;
+    state.newForm.pickupMinute = normalizeMinute(el.value);
+    el.value = state.newForm.pickupMinute;
+    el.classList.remove('invalid');
+    renderRegions(['pickup-summary', 'minute-error']);
+  });
+  // Tapping the minutes selects them, so typing replaces "00" instead of adding to it.
+  appEl.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (!el.dataset || el.dataset.input !== 'new.pickupMinute') return;
+    try { el.select(); } catch (err) { /* ignore */ }
+    setTimeout(() => { try { el.select(); } catch (err) { /* ignore */ } }, 0); // again: some phones clear it on tap
+  });
+
+  // The form never submits natively (Create is a plain button and Enter is handled on
+  // keydown); this only stops a stray native submit from reloading the page.
+  appEl.addEventListener('submit', (e) => {
+    if (e.target.closest('[data-form="new-booking"]')) e.preventDefault();
+  });
+
+  // Escape (Android back button in the real app) closes the top-most layer first.
+  document.addEventListener('keydown', (e) => {
+    if (state.pinPrompt) { pinKeydown(e); return; }
+    if (e.key !== 'Escape') return;
+    if (state.created) Actions.closeCreated();
+    else if (state.confirm) Actions.cancelConfirm();
+    else if (state.sheet) Actions.closeSheet();
+    else if (state.drawer) Actions.closeDrawer();
+  });
+
+  // The kitchen chart is drawn at the real screen width; redraw when the width changes
+  // (not on height-only changes, which happen when the on-screen keyboard opens).
+  let lastWidth = window.innerWidth;
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (window.innerWidth === lastWidth) return;
+    lastWidth = window.innerWidth;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 120);
+  });
+
+  render();
+
+  // Automatic CSV backup (bookings within 48 hours): check now, every minute, and when the app comes
+  // back to the front (the real app uses MAUI Window.Resumed / a foreground timer).
+  csvHourlyCheck();
+  setInterval(csvHourlyCheck, CSV_CHECK_EVERY_MS);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') csvHourlyCheck(); });
+</script>
+</body>
+</html>

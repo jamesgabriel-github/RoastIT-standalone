@@ -4,7 +4,8 @@ using RoastIT.Core.Entities;
 
 namespace RoastIT.Data.Configurations;
 
-// Indexes are deliberately not declared yet: they come with Phase 4 hardening (D21).
+// Indexes (D21, Phase 4): orders(pickup_at) for every date-scoped read, items(status) for the status chips, two covering
+// indexes on items for the Dashboard totals, and payments(order_key) from AddBookingsDomain.
 
 public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
 {
@@ -27,6 +28,8 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         b.Property(x => x.AmountPaid).HasColumnName("amount_paid").HasDefaultValue(0L);
         b.Property(x => x.Notes).HasColumnName("notes");
 
+        b.HasIndex(x => x.PickupAt).HasDatabaseName("ix_orders_pickup_at");
+
         b.HasMany(x => x.Items).WithOne(x => x.Order).HasForeignKey(x => x.OrderKey).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Payments).WithOne().HasForeignKey(x => x.OrderKey).OnDelete(DeleteBehavior.Restrict);
     }
@@ -43,6 +46,12 @@ public sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         b.Property(x => x.ProductId).HasColumnName("product_id");
         b.Property(x => x.Status).HasColumnName("status");               // ItemStatus as INTEGER, pipeline order
         b.Property(x => x.StartedCookingAt).HasColumnName("started_cooking_at");
+
+        b.HasIndex(x => x.Status).HasDatabaseName("ix_items_status");
+        // Covering indexes for the Dashboard's GROUP BYs over every booking (measured with ten years of data, D21). Their
+        // leading column is the foreign key, so they also replace EF's IX_items_order_key and IX_items_product_id.
+        b.HasIndex(x => new { x.OrderKey, x.Status, x.BookingId }).HasDatabaseName("ix_items_order_status_id");
+        b.HasIndex(x => new { x.ProductId, x.Status }).HasDatabaseName("ix_items_product_status");
 
         // Products are deactivated, never deleted, so there is no cascade.
         b.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);

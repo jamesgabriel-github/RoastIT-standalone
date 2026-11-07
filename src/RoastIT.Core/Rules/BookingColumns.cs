@@ -49,3 +49,31 @@ public sealed record BookingColumns(
         }
     }
 }
+
+/// <summary>One switch in Settings → Columns to show.</summary>
+public sealed record BookingColumnField(string Key, string Label, Func<BookingColumns, bool> Get, Func<BookingColumns, bool, BookingColumns> Set);
+
+/// <summary>The Settings rows for the booking card fields, in the prototype's order (settings spec §7).</summary>
+public static class BookingColumnFields
+{
+    public static readonly IReadOnlyList<BookingColumnField> All =
+    [
+        new("customer", "Customer", c => c.Customer, (c, on) => c with { Customer = on }),
+        new("product", "Product", c => c.Product, (c, on) => c with { Product = on }),
+        new("cookingTime", "Cooking time", c => c.CookingTime, (c, on) => c with { CookingTime = on }),
+        new("pickup", "Pickup", c => c.Pickup, (c, on) => c with { Pickup = on }),
+        new("status", "Status", c => c.Status, (c, on) => c with { Status = on }),
+        new("total", "Total amount", c => c.Total, (c, on) => c with { Total = on }),
+        new("paid", "Amount paid", c => c.Paid, (c, on) => c with { Paid = on }),
+    ];
+
+    public static int HiddenCount(BookingColumns columns) => All.Count(f => !f.Get(columns));
+
+    /// <summary>"Every column is shown." / "1 column hidden on the Bookings list." / "3 columns hidden on the Bookings list."</summary>
+    public static string HiddenCaption(BookingColumns columns) => HiddenCount(columns) switch
+    {
+        0 => "Every column is shown.",
+        1 => "1 column hidden on the Bookings list.",
+        var n => $"{n} columns hidden on the Bookings list.",
+    };
+}

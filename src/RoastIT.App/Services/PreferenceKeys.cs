@@ -11,5 +11,6 @@ public static class PreferenceKeys
     public const string BookingListView = "bookingListView"; // detailed | compact
     public const string LastExportAt = "lastExportAt";     // ISO timestamp
     public const string LastCsvAt = "lastCsvAt";           // ISO timestamp
+    public const string LastCsvCount = "lastCsvCount";     // bookings in the last CSV save (for the Settings card)
     public const string CsvUri = "csvUri";                 // MediaStore URI of the CSV file
 }

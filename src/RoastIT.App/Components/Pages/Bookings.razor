@@ -29,7 +29,7 @@
 }
 else
 {
-    <BookingListTab Scope="Scope" Rows="_rows" OnOpen="OpenDetail" OnAdvance="RequestAdvance" OnOpenSort="OpenSort" />
+    <BookingListTab Scope="Scope" Rows="_rows" StatusCounts="_statusCounts" OnOpen="OpenDetail" OnAdvance="RequestAdvance" OnOpenSort="OpenSort" />
 }
 
 @if (!_createdOpen)
@@ -39,7 +39,7 @@ else
 
 <BookingDetailSheet Open="_detailOpen" BookingId="@_detailId" OnClose="CloseDetail" OnSelect="SelectBooking" />
 
-<NewBookingSheet Open="_newOpen" OnClose="CloseNew" Scope="Scope" OnCreated="ShowCreated" />
+<NewBookingSheet Open="_newOpen" OnClose="CloseNew" Scope="Scope" Counts="_countsByDate" OnCreated="ShowCreated" />
 
 <BookingSortSheet Open="_sortOpen" OnClose="CloseSort"
                   Field="Scope.SortField" FieldChanged="OnSortField"
@@ -54,6 +54,7 @@ else
 
 @code {
     private IReadOnlyList<BookingRow> _rows = [];
+    private BookingStatusCounts _statusCounts = new(0, 0, 0, 0, 0, 0);
     private IReadOnlyDictionary<DateOnly, int> _countsByDate = new Dictionary<DateOnly, int>();
     private DashboardData? _dashboard;
     private bool _detailOpen, _newOpen, _sortOpen, _calendarOpen, _createdOpen;
@@ -75,6 +76,7 @@ else
         Changes.BookingsChanged += OnBookingsChanged;
         Changes.OrderChanged += OnOrderChanged;
         Changes.CatalogChanged += OnCatalogChanged;
+        Changes.DataReplaced += OnDataReplaced;
         await LoadAsync();
     }
 
@@ -89,23 +91,33 @@ else
     // A renamed product changes the cards (name, cooking time).
     private void OnCatalogChanged() => Refresh();
 
+    // Import replaced the whole database (plan §10.5 step 7).
+    private void OnDataReplaced() => Refresh();
+
     private void Refresh() => InvokeAsync(async () =>
     {
         await LoadAsync();
         StateHasChanged();
     });
 
+    // Only what the current scope shows is read (D21): one day's bookings when a date is selected, every booking only for
+    // the "all dates" list; the chips, badges and Dashboard totals come from SQL counts.
     private async Task LoadAsync()
     {
         var id = ++_loadId;
         try
         {
-            var rows = await BookingData.ListAsync();
-            var dashboard = Scope.ActiveTab == BookingTab.Dashboard ? await Dashboards.GetAsync(Scope.SelectedDate) : null;
+            var date = Scope.SelectedDate;
+            var listTab = Scope.ActiveTab == BookingTab.List;
+            IReadOnlyList<BookingRow> rows = listTab ? await BookingData.ListAsync(date) : [];
+            var statusCounts = listTab ? await BookingData.StatusCountsAsync() : _statusCounts;
+            var countsByDate = await BookingData.CountsByDateAsync();
+            var dashboard = listTab ? null : await Dashboards.GetAsync(date);
             if (id != _loadId) return; // a newer load is already on its way
 
             _rows = rows;
-            _countsByDate = BookingListing.CountsByDate(rows, Calendar);
+            _statusCounts = statusCounts;
+            _countsByDate = countsByDate;
             _dashboard = dashboard;
         }
         catch (AccessDeniedException)
@@ -192,5 +204,6 @@ else
         Changes.BookingsChanged -= OnBookingsChanged;
         Changes.OrderChanged -= OnOrderChanged;
         Changes.CatalogChanged -= OnCatalogChanged;
+        Changes.DataReplaced -= OnDataReplaced;
     }
 }

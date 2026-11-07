@@ -1,0 +1,208 @@
+@inject IBusinessCalendar Calendar
+@inject IClock Clock
+
+@* New booking: pickup date and time as separate parts (prototype "bookings-prototype_new_book_date_picker").
+   Date = a button that opens a calendar sheet (dots = days with bookings) + Today / Tomorrow chips.
+   Time = hour list (1–12) : minutes typed as 00–59 : AM/PM. A summary line reads the pickup back and warns when it has passed. *@
+<p class="group-label" style="margin-top:4px;">Pickup</p>
+<div class="pickup-card">
+    <div class="pk-part">
+        <p class="pk-label" id="pk-date-label"><Icon Name="calendar" Size="15" /> Date</p>
+        <button type="button" class="date-btn" aria-haspopup="dialog" aria-labelledby="pk-date-label pk-date-value" @onclick="OpenCalendar">
+            <span class="cal-ico"><Icon Name="calendar" Size="18" /></span>
+            <span id="pk-date-value">@BookingFormat.LongDate(_date)</span>
+            <span class="trail"><Icon Name="chevDown" Size="16" /></span>
+        </button>
+        <div class="quick-row">
+            @QuickDay(Scope.Today, "Today")
+            @QuickDay(Scope.Today.AddDays(1), "Tomorrow")
+        </div>
+    </div>
+
+    <div class="pk-part">
+        <p class="pk-label"><Icon Name="clock" Size="15" /> Time</p>
+        <div class="time-row">
+            <span class="hour-select">
+                <select class="input" aria-label="Hour" value="@_hour" @onchange="OnHour">
+                    @for (var h = 1; h <= 12; h++)
+                    {
+                        <option value="@h" selected="@(h == _hour)">@h</option>
+                    }
+                </select>
+                <span class="caret"><Icon Name="chevDown" Size="16" /></span>
+            </span>
+            <span class="time-sep" aria-hidden="true">:</span>
+            <input class="input minute-input @(MinuteBad ? "invalid" : null)" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done"
+                   aria-label="Minutes, 00 to 59" aria-describedby="pk-min-error" placeholder="00"
+                   onfocus="var e=this;e.select();setTimeout(function(){e.select()},0)"
+                   value="@_minute" @oninput="OnMinuteInput" @onchange="OnMinuteChange" />
+            <Segmented TValue="bool" AriaLabel="AM or PM" Value="_pm" ValueChanged="OnPeriod" Options="_periods" />
+        </div>
+        <p class="form-error" id="pk-min-error" role="alert">@(MinuteBad ? "Minutes go from 00 to 59." : null)</p>
+    </div>
+
+    <div class="pk-summary" aria-live="polite">
+        <span class="pk-summary-main">
+            <Icon Name="check" Size="15" />
+            <span>Pickup <b>@BookingFormat.LongDate(_date)</b> at <b class="mono">@BookingFormat.Time(Current)</b></span>
+        </span>
+        @if (PickupTime.HasPassed(Current, Calendar.ToLocal(Clock.UtcNow)))
+        {
+            <span class="pk-warn">This time has already passed.</span>
+        }
+    </div>
+</div>
+
+<BottomSheet Open="_calendarOpen" OnClose="CloseCalendar" Title="Pickup date" TopLayer="true">
+    <div class="cal-head">
+        <button type="button" class="icon-btn" aria-label="Previous month" disabled="@(!CanShift(-1))"
+                @onclick="() => Shift(-1)"><Icon Name="chevLeft" Size="16" /></button>
+        <span class="cal-label">@BookingFormat.MonthYear(_month)</span>
+        <button type="button" class="icon-btn" aria-label="Next month" disabled="@(!CanShift(1))"
+                @onclick="() => Shift(1)"><Icon Name="chevron" Size="16" /></button>
+    </div>
+
+    <div class="cal-grid">
+        @foreach (var weekday in _weekdays)
+        {
+            <span class="cal-wd">@weekday</span>
+        }
+        @for (var i = 0; i < LeadingBlanks; i++)
+        {
+            <span></span>
+        }
+        @for (var d = 1; d <= DaysInMonth; d++)
+        {
+            var day = new DateOnly(_month.Year, _month.Month, d);
+            <button type="button" class="cal-cell @(day == Scope.Today ? "today" : null) @(day == _date ? "selected" : null)"
+                    disabled="@(!Scope.IsSelectable(day))" aria-label="@BookingFormat.LongDate(day)"
+                    @onclick="() => PickDay(day)">
+                @d
+                @if (Counts.GetValueOrDefault(day) > 0)
+                {
+                    <span class="cal-dot"></span>
+                }
+            </button>
+        }
+        @for (var i = 0; i < TrailingBlanks; i++)
+        {
+            <span></span>
+        }
+    </div>
+
+    <div class="inline-row">
+        <button type="button" class="btn" @onclick="() => PickDay(Scope.Today)">Today</button>
+        <button type="button" class="btn" @onclick="() => PickDay(Scope.Today.AddDays(1))">Tomorrow</button>
+    </div>
+    <p class="caption" style="text-align:center;">Dots mark days that already have bookings. Scheduling window: @BookingFormat.MediumDate(Scope.Min) – @BookingFormat.MediumDate(Scope.Max)</p>
+</BottomSheet>
+
+@code {
+    private static readonly string[] _weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    private static readonly IReadOnlyList<SegmentedOption<bool>> _periods = [new(false, "AM"), new(true, "PM")];
+
+    private DateOnly _date;
+    private int _hour = 12;
+    private string _minute = "00";
+    private bool _pm;
+    private DateTime _lastEmitted;
+    private DateOnly _month;
+    private bool _calendarOpen;
+
+    /// <summary>The pickup as business-local wall-clock time. Set it to reset the picker; it is raised on every change.</summary>
+    [Parameter] public DateTime Value { get; set; }
+    [Parameter] public EventCallback<DateTime> ValueChanged { get; set; }
+
+    /// <summary>Today and the schedulable window (today ± 6 months).</summary>
+    [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
+
+    /// <summary>Bookings per day, for the calendar's dots.</summary>
+    [Parameter] public IReadOnlyDictionary<DateOnly, int> Counts { get; set; } = new Dictionary<DateOnly, int>();
+
+    private DateTime Current => PickupTime.Compose(_date, _hour, _minute, _pm);
+    private bool MinuteBad => PickupTime.MinuteOutOfRange(_minute);
+
+    protected override void OnParametersSet()
+    {
+        // Take the parts from the parent only when it changed the value (a reset), not when it is echoing ours.
+        if (Value != _lastEmitted)
+        {
+            (_date, _hour, _minute, _pm) = PickupTime.Split(Value);
+            _lastEmitted = Value;
+        }
+    }
+
+    private RenderFragment QuickDay(DateOnly day, string label) => __builder =>
+    {
+        var active = _date == day;
+        <button type="button" class="chip @(active ? "active" : null)" aria-pressed="@(active ? "true" : "false")"
+                @onclick="() => PickDay(day)">@label · @day.ToString("ddd d", System.Globalization.CultureInfo.InvariantCulture)</button>
+    };
+
+    // ---- Date -----------------------------------------------------------------------
+
+    private void OpenCalendar()
+    {
+        _month = new DateOnly(_date.Year, _date.Month, 1);
+        _calendarOpen = true;
+    }
+
+    private void CloseCalendar() => _calendarOpen = false;
+
+    private async Task PickDay(DateOnly day)
+    {
+        if (!Scope.IsSelectable(day)) return; // same ±6-month window as everywhere else
+        _date = day;
+        _calendarOpen = false;
+        await EmitAsync();
+    }
+
+    private int DaysInMonth => DateTime.DaysInMonth(_month.Year, _month.Month);
+    private int LeadingBlanks => (int)_month.DayOfWeek;
+    private int TrailingBlanks => (7 - (LeadingBlanks + DaysInMonth) % 7) % 7;
+
+    private bool CanShift(int months)
+    {
+        var next = _month.AddMonths(months);
+        return next >= new DateOnly(Scope.Min.Year, Scope.Min.Month, 1) && next <= new DateOnly(Scope.Max.Year, Scope.Max.Month, 1);
+    }
+
+    private void Shift(int months)
+    {
+        if (CanShift(months)) _month = _month.AddMonths(months);
+    }
+
+    // ---- Time -----------------------------------------------------------------------
+
+    private async Task OnHour(ChangeEventArgs e)
+    {
+        _hour = int.TryParse(e.Value?.ToString(), out var h) && h is >= 1 and <= 12 ? h : 12;
+        await EmitAsync();
+    }
+
+    private async Task OnPeriod(bool pm)
+    {
+        _pm = pm;
+        await EmitAsync();
+    }
+
+    // Digits only, the last two kept, so "00" + 7 → "07" and then + 5 → "75" even when the text wasn't selected first.
+    private async Task OnMinuteInput(ChangeEventArgs e)
+    {
+        _minute = PickupTime.CleanMinuteInput(e.Value?.ToString());
+        await EmitAsync();
+    }
+
+    // Tidy up when the field is left: "7" → "07", "75" → "59", empty → "00".
+    private async Task OnMinuteChange(ChangeEventArgs e)
+    {
+        _minute = PickupTime.NormalizeMinute(e.Value?.ToString());
+        await EmitAsync();
+    }
+
+    private async Task EmitAsync()
+    {
+        _lastEmitted = Current;
+        await ValueChanged.InvokeAsync(_lastEmitted);
+    }
+}

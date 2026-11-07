@@ -149,9 +149,14 @@ namespace RoastIT.Data.Migrations
 
                     b.HasKey("BookingId");
 
-                    b.HasIndex("OrderKey");
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_items_status");
 
-                    b.HasIndex("ProductId");
+                    b.HasIndex("ProductId", "Status")
+                        .HasDatabaseName("ix_items_product_status");
+
+                    b.HasIndex("OrderKey", "Status", "BookingId")
+                        .HasDatabaseName("ix_items_order_status_id");
 
                     b.ToTable("items", (string)null);
                 });
@@ -199,6 +204,9 @@ namespace RoastIT.Data.Migrations
                         .HasColumnName("total_amount");
 
                     b.HasKey("Key");
+
+                    b.HasIndex("PickupAt")
+                        .HasDatabaseName("ix_orders_pickup_at");
 
                     b.ToTable("orders", null, t =>
                         {
@@ -272,6 +280,9 @@ namespace RoastIT.Data.Migrations
                         .HasColumnName("price");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Active")
+                        .HasDatabaseName("ix_products_active");
 
                     b.ToTable("products", null, t =>
                         {
