@@ -9,7 +9,7 @@ Last updated: 2026-11-07 (Phase 2 built). Read this first in a new session, then
 |---|---|---|
 | 0 — Foundation | **Done.** Checkpoint passed in Visual Studio | Layout, theme, shared components, fonts, DB startup, logging |
 | 1 — App lock | **Built. Code and tests done; device checkpoint not yet run** | See "Phase 1 device checkpoint" below |
-| 2 — Menu | **Built. Code and tests done; device checkpoint not yet run** | See "Phase 2 device checkpoint" below |
+| 2 — Menu | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported | Committed as `6657006`. Checklist kept below for reference |
 | 3 — Bookings | Not started — **next** | `AddBookingsDomain` migration, `IBusinessCalendar`, `OrderMath`, booking services, Bookings page |
 | 4 — Settings, backup, hardening | Not started | Settings has Security + Appearance only so far |
 | 5 — Release | Not started | |
@@ -134,9 +134,9 @@ Fresh install (or Clear storage):
 7. Back on Unlock sends the app to the background; on the recovery-code view it does nothing.
 8. Everything renders correctly in dark mode.
 
-Not yet exercised on a device: the in-app `PinPrompt` (first used by the Phase 2 Menu; see below).
+The in-app `PinPrompt` was exercised by the Phase 2 checkpoint. The Phase 1 checklist itself has not been confirmed as run.
 
-## Phase 2 device checkpoint (to run in Visual Studio, Android; plan §13 Phase 2)
+## Phase 2 device checkpoint (run by the user; plan §13 Phase 2)
 
 The Menu starts **empty** (the prototype's five seed products are fake data and are not seeded).
 Also exercises the in-app `PinPrompt` for the first time, which was never run on a device.
@@ -162,6 +162,15 @@ Start with the `AddBookingsDomain` migration, `IBusinessCalendar` (Asia/Manila),
 already provides `IChangeNotifier` (only `CatalogChanged` so far; add `BookingsChanged(date)` and
 `OrderChanged(key)`), `Money`/`DurationFormat` display helpers, and `ProductService.ListAsync` for the
 New booking product picker (filter to `Active`; `CreateAsync` must still reject inactive products itself).
+
+**Next step (start of the next session):** read this file, `CLAUDE.md`, plan §6–§8 and §13 Phase 3, and
+the Bookings spec and prototype; then build Phase 3 in this order, with tests for each rule (real SQLite):
+1. `AddBookingsDomain` migration (`orders`, `items`, `payments`, `daily_counters`; indexes stay deferred, D21).
+2. `IBusinessCalendar` (Asia/Manila) and booking-ID allocation (`YYMMDD-NNN`, block claimed in the insert transaction).
+3. `OrderMath`, `BookingService` / `OrderService` (create, advance status, payments, discount, write-off, cancel
+   whole order), then `DashboardService`.
+4. Bookings page: date strip + calendar, list, detail sheet, New booking sheet, dashboard.
+5. Phase 3 checkpoint (plan §13), then update this file. Open Phase 3 questions go in plan §15.1 as Q21+.
 
 ## Working agreements (from CLAUDE.md, repeated because they matter)
 
