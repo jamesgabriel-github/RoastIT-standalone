@@ -1,0 +1,61 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject ThemeService Theme
+@inject BackNavigationService BackNavigation
+@inject IdleMonitor Idle
+
+@* Invisible app-wide glue: applies the theme to <html>, locks page scroll while a layer is open,
+   routes Escape to the back stack, reports activity for the idle auto-lock, and hosts the toast and the
+   PIN prompt. Lives in Routes.razor so it covers every layout. *@
+<ToastHost />
+<PinPrompt />
+
+@code {
+    private DotNetObjectReference<AppHost>? _self;
+
+    protected override void OnInitialized()
+    {
+        Theme.Changed += OnThemeChanged;
+        BackNavigation.LayersChanged += OnLayersChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("roastit.registerEscape", _self);
+        await JS.InvokeVoidAsync("roastit.registerActivity", _self);
+        await ApplyThemeAsync();
+        await ApplyScrollLockAsync();
+    }
+
+    [JSInvokable]
+    public Task OnEscape() => BackNavigation.TryCloseTopAsync();
+
+    [JSInvokable]
+    public void OnActivity() => Idle.NotifyActivity();
+
+    private void OnThemeChanged() => InvokeAsync(ApplyThemeAsync);
+
+    private void OnLayersChanged() => InvokeAsync(ApplyScrollLockAsync);
+
+    private async Task ApplyThemeAsync()
+    {
+        try { await JS.InvokeVoidAsync("roastit.applyTheme", Theme.IsDark, Theme.Mode.ToKey()); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ApplyScrollLockAsync()
+    {
+        try { await JS.InvokeVoidAsync("roastit.setScrollLock", BackNavigation.HasOverlay); }
+        catch (JSDisconnectedException) { }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Theme.Changed -= OnThemeChanged;
+        BackNavigation.LayersChanged -= OnLayersChanged;
+        _self?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

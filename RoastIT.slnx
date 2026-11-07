@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RoastIT.App/RoastIT.App.csproj" />
+    <Project Path="src/RoastIT.Core/RoastIT.Core.csproj" />
+    <Project Path="src/RoastIT.Data/RoastIT.Data.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RoastIT.Tests/RoastIT.Tests.csproj" />
+  </Folder>
+</Solution>

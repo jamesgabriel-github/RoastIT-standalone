@@ -1,0 +1,41 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<nav class="bottomnav" aria-label="Main">
+    <div class="bottomnav-inner">
+        @foreach (var item in Items)
+        {
+            var active = IsActive(item.Href);
+            <a class="navitem @(active ? "active" : null)" href="@item.Href" aria-current="@(active ? "page" : null)">
+                <Icon Name="@item.Icon" Size="22" />
+                <span>@item.Label</span>
+            </a>
+        }
+    </div>
+</nav>
+
+@code {
+    private sealed record NavItem(string Href, string Icon, string Label);
+
+    private static readonly NavItem[] Items =
+    [
+        new("bookings", "list", "Bookings"),
+        new("menu", "flame", "Menu"),
+        new("settings", "gear", "Settings"),
+    ];
+
+    protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    private bool IsActive(string href)
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri);
+        var end = path.IndexOfAny(['?', '#']);
+        if (end >= 0) path = path[..end];
+        return path.Equals(href, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(href + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

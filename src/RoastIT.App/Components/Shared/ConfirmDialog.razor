@@ -1,0 +1,32 @@
+@inherits LayerComponentBase
+
+@if (Open)
+{
+    <div class="dialog-backdrop" @onclick="CloseAsync"></div>
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-label="@Title">
+        <h2>@Title</h2>
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <p>@Message</p>
+        }
+        @ChildContent
+        <div class="dialog-actions">
+            <button type="button" class="btn" @onclick="CloseAsync">@CancelLabel</button>
+            <button type="button" class="btn @(Danger ? "btn-danger-solid" : "btn-primary")" @onclick="ConfirmAsync">@ConfirmLabel</button>
+        </div>
+    </div>
+}
+
+@code {
+    protected override LayerKind Kind => LayerKind.Dialog;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string ConfirmLabel { get; set; } = "Confirm";
+    [Parameter] public string CancelLabel { get; set; } = "Cancel";
+    [Parameter] public bool Danger { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    private Task ConfirmAsync() => OnConfirm.InvokeAsync();
+}

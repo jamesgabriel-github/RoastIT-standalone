@@ -1,0 +1,7 @@
+<svg viewBox="0 0 20 20" width="@Size" height="@Size" fill="none" stroke="currentColor" stroke-width="@StrokeWidth" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">@((MarkupString)IconPaths.Get(Name))</svg>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public int Size { get; set; } = 20;
+    [Parameter] public string StrokeWidth { get; set; } = "1.8";
+}

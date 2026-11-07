@@ -1,0 +1,57 @@
+@implements IDisposable
+@inject IAppLock AppLock
+@inject NavigationManager Navigation
+
+@* While the app is locked every route except /lock is replaced by the lock screen, and nothing else is
+   rendered, so a page can't load data behind the lock. *@
+@if (Allowed)
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool IsLockRoute
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri);
+            var end = path.IndexOfAny(['?', '#']);
+            if (end >= 0) path = path[..end];
+            return path.Equals("lock", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private bool Allowed => !AppLock.IsLocked || IsLockRoute;
+
+    protected override void OnInitialized()
+    {
+        AppLock.LockStateChanged += OnLockStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        Redirect();
+    }
+
+    private void Redirect()
+    {
+        if (AppLock.IsLocked && !IsLockRoute) Navigation.NavigateTo("lock", replace: true);
+    }
+
+    private void OnLockStateChanged() => InvokeAsync(() =>
+    {
+        Redirect();
+        StateHasChanged();
+    });
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(() =>
+    {
+        Redirect();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        AppLock.LockStateChanged -= OnLockStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

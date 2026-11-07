@@ -1,0 +1,13 @@
+@page "/menu"
+@inject ToastService Toasts
+
+@* Phase 2 builds the real Menu screen. For now: an empty page. *@
+<PageHeading Title="Menu" Subtitle="Products, pricing, and availability" />
+
+<EmptyState>Your products will appear here. (Built in Phase 2.)</EmptyState>
+
+<Fab Label="Add product" OnClick="OnAddProduct" />
+
+@code {
+    private void OnAddProduct() => Toasts.Show("Add product arrives in Phase 2", ToastDuration.Menu);
+}

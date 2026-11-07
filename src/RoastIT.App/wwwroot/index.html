@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Roastline</title>
+    <base href="/" />
+    <script>
+        // Apply the last-used theme before first paint, so there's no flash of the wrong theme.
+        // This is only a cache of the theme choice (the source of truth is MAUI Preferences, applied
+        // by ThemeService right after startup). Storage can be unavailable, so fall back to light.
+        (function () {
+            var mode = 'light';
+            try { mode = localStorage.getItem('roastline.themeCache') || 'light'; } catch (e) { }
+            var dark = mode === 'dark' ||
+                (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" href="data:,">
+</head>
+
+<body>
+
+    <div id="app"></div>
+
+    <div id="blazor-error-ui" data-nosnippet>
+        Something went wrong.
+        <a href=".">Reload</a>
+    </div>
+
+    <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <script src="js/app.js"></script>
+
+</body>
+
+</html>

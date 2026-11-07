@@ -1,0 +1,153 @@
+@implements IAsyncDisposable
+@inject PinPromptService Prompts
+@inject IAppLock AppLock
+@inject IClock Clock
+@inject IJSRuntime JS
+
+@* PIN confirmation for critical actions (shared-ui-spec §7). Hosted once in AppHost; callers use PinPromptService. *@
+<BottomSheet Open="Request is not null" Title="Enter your PIN" IsPinPrompt="true" ShowHeader="false" BodyClass="pin-body" OnClose="CancelAsync">
+    @if (Request is { } request)
+    {
+        <div class="pin-head">
+            <div class="pin-icon"><Icon Name="lock" /></div>
+            <h2>Enter your PIN to continue</h2>
+            <p class="pin-detail">@request.Summary</p>
+            @if (request.Scope == PinScope.Bookings)
+            {
+                <p class="caption" style="max-width:300px;">Payments, write-offs and cancellations won't ask again for 3 minutes.</p>
+            }
+        </div>
+        <PinDots Count="_entry.Length" Shake="_shake" />
+        <div class="pin-msg" role="alert">@Message</div>
+        <Keypad OnDigit="OnDigit" OnDelete="OnDelete" OnConfirm="SubmitAsync" ConfirmLabel="@request.ConfirmLabel"
+                ConfirmDisabled="@(_entry.Length < PinRules.MinLength)" Disabled="_countdown.Active" />
+        <button type="button" class="btn pin-cancel" @onclick="CancelAsync">Cancel</button>
+    }
+</BottomSheet>
+
+@code {
+    private PinPromptRequest? Request => Prompts.Current;
+    private PinPromptRequest? _shown;          // the request the local state belongs to
+    private string _entry = "";
+    private string _message = "";
+    private bool _shake, _busy;
+    private LockoutCountdown _countdown = default!;
+    private DotNetObjectReference<PinPrompt>? _self;
+
+    private string Message => _countdown.Active ? PinMessages.LockedOut(_countdown.SecondsLeft) : _message;
+
+    protected override void OnInitialized()
+    {
+        _countdown = new LockoutCountdown(Clock, () => InvokeAsync(StateHasChanged));
+        Prompts.Changed += OnPromptChanged;
+    }
+
+    private void OnPromptChanged() => InvokeAsync(async () =>
+    {
+        if (!ReferenceEquals(_shown, Request))
+        {
+            _shown = Request;
+            _entry = "";
+            _message = "";
+            _shake = false;
+            _countdown.Stop();
+            if (_shown is not null) await OpenAsync(); else await ReleaseKeysAsync();
+        }
+        StateHasChanged();
+    });
+
+    private async Task OpenAsync()
+    {
+        // Closes the on-screen keyboard, then lets the physical keyboard drive the keypad.
+        _self ??= DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("roastit.blurActive");
+            await JS.InvokeVoidAsync("roastit.captureKeys", _self);
+        }
+        catch (JSDisconnectedException) { }
+
+        // A lockout may already be running when the prompt opens.
+        var status = await AppLock.GetLockoutAsync();
+        if (status.IsLockedOut) _countdown.Start(status.LockedUntil!.Value);
+    }
+
+    private async Task ReleaseKeysAsync()
+    {
+        try { await JS.InvokeVoidAsync("roastit.releaseKeys"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private Task CancelAsync()
+    {
+        Prompts.Cancel();
+        return Task.CompletedTask;
+    }
+
+    private void OnDigit(char digit)
+    {
+        if (_countdown.Active || _entry.Length >= PinRules.MaxLength) return;
+        _entry += digit;
+        _message = "";
+        _shake = false;
+    }
+
+    private void OnDelete()
+    {
+        if (_countdown.Active || _entry.Length == 0) return;
+        _entry = _entry[..^1];
+        _shake = false;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_countdown.Active || _busy || Request is not { } request || _entry.Length < PinRules.MinLength) return;
+        _busy = true;
+        try
+        {
+            var result = await AppLock.ConfirmAsync(_entry, request.Scope);
+            switch (result.Attempt.Status)
+            {
+                case PinAttemptStatus.Success:
+                    _entry = "";
+                    Prompts.Complete(result.Confirmation!);
+                    return;
+                case PinAttemptStatus.Wrong:
+                    _entry = "";
+                    _shake = true;
+                    _message = PinMessages.WrongPin(result.Attempt.TriesLeft);
+                    break;
+                case PinAttemptStatus.LockedOut:
+                    _entry = "";
+                    _shake = true;
+                    _message = "";
+                    _countdown.Start(result.Attempt.LockedUntil!.Value);
+                    break;
+            }
+        }
+        catch (AccessDeniedException)
+        {
+            Prompts.Cancel(); // the app locked in the meantime
+        }
+        finally { _busy = false; }
+    }
+
+    [JSInvokable]
+    public Task OnKey(string key) => InvokeAsync(async () =>
+    {
+        if (Request is null) return;
+        if (key.Length == 1 && char.IsAsciiDigit(key[0])) OnDigit(key[0]);
+        else if (key == "Backspace") OnDelete();
+        else if (key == "Enter") await SubmitAsync();
+        StateHasChanged();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Prompts.Changed -= OnPromptChanged;
+        _countdown.Dispose();
+        try { await JS.InvokeVoidAsync("roastit.releaseKeys"); }
+        catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException) { }
+        _self?.Dispose();
+    }
+}

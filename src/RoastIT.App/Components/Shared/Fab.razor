@@ -1,0 +1,19 @@
+@implements IDisposable
+@inject BackNavigationService BackNavigation
+
+@* Floating action button. Hidden while a full-screen sheet is open (shared-ui-spec §3.1). *@
+@if (!BackNavigation.HasFullSheet)
+{
+    <button type="button" class="fab" @onclick="OnClick"><Icon Name="plus" Size="18" />@Label</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    protected override void OnInitialized() => BackNavigation.LayersChanged += OnLayersChanged;
+
+    private void OnLayersChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => BackNavigation.LayersChanged -= OnLayersChanged;
+}

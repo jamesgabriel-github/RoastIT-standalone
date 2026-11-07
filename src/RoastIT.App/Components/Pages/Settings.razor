@@ -1,0 +1,46 @@
+@page "/settings"
+@implements IDisposable
+@inject ThemeService Theme
+
+@* Security and Appearance so far. Data (export/import, CSV) and Columns to show arrive in Phase 4. *@
+<PageHeading Title="Settings" Subtitle="PIN, data, appearance, and bookings list" HasFab="false" />
+
+<section class="section" aria-labelledby="sec-security">
+    <h2 class="section-title" id="sec-security">Security</h2>
+    <div class="set-card">
+        <a class="set-row" href="lock?mode=change">
+            <span class="set-icon"><Icon Name="key" Size="18" /></span>
+            <span class="set-text"><span class="set-title">Update PIN</span><span class="set-sub">Change the 4–6 digit PIN that opens Roastline</span></span>
+            <span class="set-trail"><Icon Name="chevron" Size="16" /></span>
+        </a>
+    </div>
+    <p class="caption" style="padding:0 2px;">Roastline locks itself whenever the app is reopened, and after 10 minutes without use. Your PIN is also asked before adding or editing menu items (every time), before recording a payment, waiving a remaining balance or cancelling a booking (remembered for 3 minutes), and every time you export or import data.</p>
+</section>
+
+<section class="section" aria-labelledby="sec-appearance">
+    <h2 class="section-title" id="sec-appearance">Appearance</h2>
+    <div class="set-card">
+        <div class="set-block">
+            <span class="set-title">Theme</span>
+            <Segmented TValue="ThemeMode" AriaLabel="Theme" Options="_themes" Value="Theme.Mode" ValueChanged="Theme.SetMode" />
+            <p class="caption">Device matches your phone's light or dark setting and follows it when it changes.</p>
+        </div>
+    </div>
+</section>
+
+<p class="version">Roastline · version @AppInfo.Current.VersionString</p>
+
+@code {
+    private static readonly IReadOnlyList<SegmentedOption<ThemeMode>> _themes =
+    [
+        new(ThemeMode.Light, "Light", "sun"),
+        new(ThemeMode.Dark, "Dark", "moon"),
+        new(ThemeMode.System, "Device", "device"),
+    ];
+
+    protected override void OnInitialized() => Theme.Changed += OnThemeChanged;
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Theme.Changed -= OnThemeChanged;
+}

@@ -1,0 +1,7 @@
+@page "/"
+@inject NavigationManager Navigation
+
+@* Default route. Bookings is the landing page (after unlock, once the lock screen exists in Phase 1). *@
+@code {
+    protected override void OnInitialized() => Navigation.NavigateTo("bookings", replace: true);
+}

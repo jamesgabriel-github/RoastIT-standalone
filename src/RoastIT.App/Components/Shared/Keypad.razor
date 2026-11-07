@@ -1,0 +1,27 @@
+<div class="keypad @(Large ? "large" : null)" role="group" aria-label="PIN keypad">
+    @foreach (var digit in Digits)
+    {
+        <button type="button" class="key" disabled="@Disabled" @onclick="() => OnDigit.InvokeAsync(digit)">@digit</button>
+    }
+    <button type="button" class="key fn" disabled="@Disabled" aria-label="Delete" @onclick="() => OnDelete.InvokeAsync()"><Icon Name="backspace" Size="22" /></button>
+    <button type="button" class="key" disabled="@Disabled" @onclick="() => OnDigit.InvokeAsync('0')">0</button>
+    <button type="button" class="key ok" disabled="@(Disabled || ConfirmDisabled)" @onclick="() => OnConfirm.InvokeAsync()">@ConfirmLabel</button>
+</div>
+
+@code {
+    private static readonly char[] Digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+    [Parameter] public EventCallback<char> OnDigit { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public string ConfirmLabel { get; set; } = "OK";
+
+    /// <summary>Confirm stays disabled until the PIN has at least 4 digits.</summary>
+    [Parameter] public bool ConfirmDisabled { get; set; }
+
+    /// <summary>All keys off, e.g. during the 30 s lockout.</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Lock-screen size (64 px keys) instead of the prompt size (56 px).</summary>
+    [Parameter] public bool Large { get; set; }
+}

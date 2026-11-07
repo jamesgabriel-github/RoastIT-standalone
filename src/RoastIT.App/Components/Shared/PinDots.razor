@@ -1,0 +1,24 @@
+<div class="@(Large ? "dots" : "pin-dots") @(Shake ? "shake" : null)" aria-live="polite" aria-label="@Count digits entered">
+    @if (Count == 0)
+    {
+        <span class="@(Large ? "dots-hint" : "pin-hint")">@Hint</span>
+    }
+    else
+    {
+        @for (var i = 0; i < Count; i++)
+        {
+            <span class="@(Large ? "dot" : "pin-dot")"></span>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int Count { get; set; }
+    [Parameter] public string Hint { get; set; } = "Enter your PIN";
+
+    /// <summary>Plays the 0.35 s shake. The parent sets it true for a wrong PIN and back to false on the next input.</summary>
+    [Parameter] public bool Shake { get; set; }
+
+    /// <summary>Lock-screen size (14 px dots) instead of the prompt size (13 px).</summary>
+    [Parameter] public bool Large { get; set; }
+}

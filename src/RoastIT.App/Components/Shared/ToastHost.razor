@@ -1,0 +1,25 @@
+@implements IDisposable
+@inject ToastService Toasts
+@inject BackNavigationService BackNavigation
+
+@* Hidden while a bottom sheet, dialog or PIN prompt is open; shown above the footer when a full sheet is open. *@
+@if (Toasts.Message is { } message && !BackNavigation.HasBlockingOverlay)
+{
+    <div class="toast @(BackNavigation.HasFullSheet ? "over-footer" : null)" role="status">@message</div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Toasts.Changed += OnChanged;
+        BackNavigation.LayersChanged += OnChanged;
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Toasts.Changed -= OnChanged;
+        BackNavigation.LayersChanged -= OnChanged;
+    }
+}

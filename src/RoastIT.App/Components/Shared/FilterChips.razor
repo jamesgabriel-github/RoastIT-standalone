@@ -1,0 +1,17 @@
+<div class="chip-row no-scrollbar" role="group" aria-label="@AriaLabel">
+    @foreach (var chip in Items)
+    {
+        var active = chip.Key == Selected;
+        <button type="button" class="chip @(active ? "active" : null)" aria-pressed="@(active ? "true" : "false")"
+                @onclick="() => SelectAsync(chip.Key)">@chip.Label</button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChipItem> Items { get; set; } = [];
+    [Parameter] public string? Selected { get; set; }
+    [Parameter] public EventCallback<string> SelectedChanged { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+
+    private Task SelectAsync(string key) => SelectedChanged.InvokeAsync(key);
+}

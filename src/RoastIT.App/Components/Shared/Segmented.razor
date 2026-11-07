@@ -1,0 +1,25 @@
+@typeparam TValue
+
+<div class="segmented" role="radiogroup" aria-label="@AriaLabel">
+    @foreach (var option in Options)
+    {
+        var selected = EqualityComparer<TValue>.Default.Equals(option.Value, Value);
+        <button type="button" class="seg @(selected ? "active" : null)" role="radio" aria-checked="@(selected ? "true" : "false")"
+                @onclick="() => SelectAsync(option.Value)">
+            @if (option.Icon is not null)
+            {
+                <Icon Name="@option.Icon" Size="16" />
+            }
+            @option.Label
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SegmentedOption<TValue>> Options { get; set; } = [];
+    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+
+    private Task SelectAsync(TValue value) => ValueChanged.InvokeAsync(value);
+}

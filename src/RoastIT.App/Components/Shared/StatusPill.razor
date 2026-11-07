@@ -1,0 +1,7 @@
+<span class="pill @Kind"><span class="pill-dot"></span>@Label</span>
+
+@code {
+    /// <summary>pending, cooking, cooked, completed, cancelled, active or inactive (picks the colour).</summary>
+    [Parameter, EditorRequired] public string Kind { get; set; } = "pending";
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+}

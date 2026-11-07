@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- RoastIT.App only targets Android/Windows, so the test project can't reference it.
+       These App services have no MAUI dependency; compile them straight into the tests. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\RoastIT.App\Services\BackNavigationService.cs" Link="Linked\BackNavigationService.cs" />
+    <Compile Include="..\..\src\RoastIT.App\Services\ToastService.cs" Link="Linked\ToastService.cs" />
+    <Compile Include="..\..\src\RoastIT.App\Services\ThemeMode.cs" Link="Linked\ThemeMode.cs" />
+    <Compile Include="..\..\src\RoastIT.App\Services\PinPromptService.cs" Link="Linked\PinPromptService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RoastIT.Core\RoastIT.Core.csproj" />
+    <ProjectReference Include="..\..\src\RoastIT.Data\RoastIT.Data.csproj" />
+  </ItemGroup>
+
+</Project>

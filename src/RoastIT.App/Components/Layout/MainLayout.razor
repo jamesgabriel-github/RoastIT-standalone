@@ -1,0 +1,34 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+
+@* Bookings · Menu · Settings shell (shared-ui-spec §3.1). Pages set the top bar through <PageHeading>. *@
+<CascadingValue Value="_header" IsFixed="true">
+    <div class="app @(_header.HasFab ? null : "no-fab")">
+        <header class="topbar">
+            <div class="topbar-inner">
+                <div class="brand-mark"><Icon Name="flame" Size="17" StrokeWidth="1.6" /></div>
+                <div class="topbar-titles">
+                    <h1>@_header.Title</h1>
+                    <span class="sub">@_header.Subtitle</span>
+                </div>
+            </div>
+        </header>
+
+        @* Pages without a FAB (Settings) use the roomier 18 px gap. *@
+        <main class="content @(_header.HasFab ? null : "roomy")">
+            @Body
+        </main>
+
+        <BottomNav />
+    </div>
+</CascadingValue>
+
+@code {
+    private readonly PageHeaderState _header = new();
+
+    protected override void OnInitialized() => _header.Changed += OnHeaderChanged;
+
+    private void OnHeaderChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => _header.Changed -= OnHeaderChanged;
+}

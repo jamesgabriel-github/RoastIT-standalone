@@ -1,0 +1,36 @@
+@inherits LayerComponentBase
+
+@* Bottom sheet: sort, calendar, export/import and the PIN prompt (shared-ui-spec §5). *@
+@if (Open)
+{
+    <div class="backdrop @LayerClass" @onclick="CloseAsync"></div>
+    <div class="sheet bottom @LayerClass" role="dialog" aria-modal="true" aria-label="@Title">
+        <div class="sheet-grabber"></div>
+        @if (ShowHeader)
+        {
+            <div class="sheet-header">
+                <span class="sheet-title">@Title</span>
+                <button type="button" class="icon-btn" aria-label="Close" @onclick="CloseAsync"><Icon Name="close" Size="18" /></button>
+            </div>
+        }
+        <div class="sheet-body @BodyClass">@ChildContent</div>
+    </div>
+}
+
+@code {
+    protected override LayerKind Kind => IsPinPrompt ? LayerKind.PinPrompt : LayerKind.BottomSheet;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? BodyClass { get; set; }
+
+    /// <summary>Opened over a full sheet (z-index 60/61), e.g. Bookings sort and calendar.</summary>
+    [Parameter] public bool TopLayer { get; set; }
+
+    /// <summary>The PIN prompt: highest layer (z-index 90/91), closes first on Back.</summary>
+    [Parameter] public bool IsPinPrompt { get; set; }
+
+    [Parameter] public bool ShowHeader { get; set; } = true;
+
+    private string? LayerClass => IsPinPrompt ? "pin-layer" : TopLayer ? "top-layer" : null;
+}

@@ -1,0 +1,528 @@
+@page "/lock"
+@layout LockLayout
+@implements IAsyncDisposable
+@inject IAppLock AppLock
+@inject IClock Clock
+@inject NavigationManager Navigation
+@inject BackNavigationService BackNavigation
+@inject IAppBackgrounder Backgrounder
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+@* Lock screen: first-run setup, unlock, forgot PIN, change PIN (docs/specs/signin-prototype-spec.md). *@
+<div class="lock-top">
+    <div class="brand">
+        <div class="brand-mark"><Icon Name="flame" Size="19" StrokeWidth="1.6" /></div>
+        <div class="brand-text">
+            <span class="brand-name">Roastline</span>
+            <span class="brand-sub">Litson Haus</span>
+        </div>
+    </div>
+    @if (_view == LockView.Forgot)
+    {
+        <button type="button" class="top-link" @onclick="BackToUnlock">Back</button>
+    }
+    else if (ShowCancel)
+    {
+        <button type="button" class="top-link" @onclick="CancelChange">Cancel</button>
+    }
+</div>
+
+<div class="lock-main">
+    @switch (_view)
+    {
+        case LockView.Loading:
+            break;
+
+        case LockView.Enter:
+        case LockView.Confirm:
+        case LockView.Unlock:
+        case LockView.Verify:
+            var copy = Copy();
+            <div class="lock-head"><h1>@copy.Title</h1><p>@copy.Subtitle</p></div>
+            <PinDots Large="true" Count="_entry.Length" Hint="@copy.Hint" Shake="_shake" />
+            <div class="msg error" role="alert">@Message</div>
+            <Keypad Large="true" OnDigit="OnDigit" OnDelete="OnDelete" OnConfirm="SubmitAsync" ConfirmLabel="@copy.ConfirmLabel"
+                    ConfirmDisabled="@(_entry.Length < PinRules.MinLength)" Disabled="_countdown.Active" />
+            @if (_view == LockView.Unlock)
+            {
+                <div class="links"><button type="button" class="link" @onclick="OpenForgot">Forgot PIN?</button></div>
+            }
+            break;
+
+        case LockView.Forgot:
+            <div class="lock-head">
+                <h1>Use your recovery code</h1>
+                <p>It's the 12-character code you saved when you set up your PIN.</p>
+            </div>
+            <form class="stack" @onsubmit="VerifyCodeAsync" @onsubmit:preventDefault="true">
+                <div class="field">
+                    <label class="field-label" for="recovery-code">Recovery code</label>
+                    <input id="recovery-code" class="input code-input" type="text" inputmode="text" placeholder="XXXX-XXXX-XXXX"
+                           autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"
+                           disabled="@_countdown.Active" @oninput="OnCodeInput" />
+                </div>
+                <div class="msg error" role="alert">@Message</div>
+                <button type="submit" class="btn btn-primary" disabled="@_countdown.Active">Verify code</button>
+            </form>
+            <p class="note">Lost the code too? The only option left is reinstalling the app, which erases all bookings on this device unless you have a backup.</p>
+            break;
+
+        case LockView.Recovery:
+            <div class="lock-head">
+                <h1>Save your recovery code</h1>
+                <p>If you forget your PIN, this code is the only way back in.</p>
+            </div>
+            <div class="code-card">
+                <span class="code">@_recoveryCode</span>
+                <button type="button" class="copy-btn" @onclick="CopyCodeAsync"><Icon Name="copy" Size="15" /> Copy</button>
+            </div>
+            @if (_flow == LockFlow.Reset)
+            {
+                <div class="warn">Your old recovery code no longer works.</div>
+            }
+            <div class="warn">Without this code, a forgotten PIN means reinstalling the app — which erases all bookings on this device.</div>
+            <label class="check"><input type="checkbox" checked="@_savedAck" @onchange="e => _savedAck = (bool)(e.Value ?? false)" /> I've written this code down somewhere safe.</label>
+            <button type="button" class="btn btn-primary" disabled="@(!_savedAck)" @onclick="ContinueAfterCode">Continue</button>
+            break;
+
+        case LockView.Done:
+            <div class="success"><Icon Name="check" Size="26" /></div>
+            <div class="lock-head"><h1>@_doneTitle</h1><p>@_doneText</p></div>
+            <button type="button" class="btn btn-primary" @onclick="LeaveDone">@_doneButton</button>
+            break;
+    }
+</div>
+
+@code {
+    private enum LockView { Loading, Enter, Confirm, Recovery, Unlock, Verify, Forgot, Done }
+    private enum LockFlow { Setup, Reset, Change }
+
+    private sealed record ViewCopy(string Title, string Subtitle, string Hint, string ConfirmLabel);
+
+    /// <summary>?mode=change, from Settings → Update PIN.</summary>
+    [SupplyParameterFromQuery(Name = "mode")] public string? Mode { get; set; }
+
+    private LockView _view = LockView.Loading;
+    private LockFlow _flow = LockFlow.Setup;
+    private string _entry = "";
+    private string _firstEntry = "";        // typed on Enter, compared on Confirm; never persisted
+    private string _verifiedPin = "";       // change flow: held in memory between Verify and Save
+    private string _verifiedCode = "";      // forgot flow: held in memory between Verify code and Save
+    private string _codeInput = "";
+    private string _recoveryCode = "";
+    private string _message = "";
+    private bool _shake, _busy, _savedAck;
+    private string _doneTitle = "", _doneText = "", _doneButton = "";
+    private bool _doneRedirects;
+    private bool _changeMode;
+    private LockoutCountdown _countdown = default!;
+    private IDisposable? _backRegistration;
+    private DotNetObjectReference<Lock>? _self;
+    private readonly CancellationTokenSource _cts = new();
+
+    private string Message => _countdown.Active ? PinMessages.LockedOut(_countdown.SecondsLeft) : _message;
+
+    /// <summary>Cancel link: only in the change-PIN flow, on Verify / Enter / Confirm (signin spec §2).</summary>
+    private bool ShowCancel => _changeMode && _view is LockView.Verify or LockView.Enter or LockView.Confirm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _countdown = new LockoutCountdown(Clock, () => InvokeAsync(StateHasChanged));
+        AppLock.LockStateChanged += OnLockStateChanged;
+        _backRegistration = BackNavigation.Push(LayerKind.PageBack, HandleBackAsync);
+
+        _changeMode = string.Equals(Mode, "change", StringComparison.OrdinalIgnoreCase) && !AppLock.IsLocked;
+        var setUp = await AppLock.IsSetUpAsync();
+
+        if (_changeMode && setUp)
+        {
+            _flow = LockFlow.Change;
+            _view = LockView.Verify;
+        }
+        else if (!setUp)
+        {
+            _flow = LockFlow.Setup;
+            _view = LockView.Enter;
+        }
+        else if (!AppLock.IsLocked)
+        {
+            // Unlocked and not changing the PIN: nothing to do here.
+            Navigation.NavigateTo("bookings", replace: true);
+            return;
+        }
+        else
+        {
+            _view = LockView.Unlock;
+        }
+
+        await StartKeyboardAsync();
+        await ShowLockoutIfRunningAsync();
+    }
+
+    // ---- Keyboard ---------------------------------------------------------------
+
+    private async Task StartKeyboardAsync()
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await JS.InvokeVoidAsync("roastit.captureKeys", _self); }
+        catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException) { }
+    }
+
+    [JSInvokable]
+    public Task OnKey(string key) => InvokeAsync(async () =>
+    {
+        if (!IsKeypadView) return;
+        if (key.Length == 1 && char.IsAsciiDigit(key[0])) OnDigit(key[0]);
+        else if (key == "Backspace") OnDelete();
+        else if (key == "Enter") await SubmitAsync();
+        StateHasChanged();
+    });
+
+    private bool IsKeypadView => _view is LockView.Enter or LockView.Confirm or LockView.Unlock or LockView.Verify;
+
+    private void OnDigit(char digit)
+    {
+        if (_countdown.Active || _entry.Length >= PinRules.MaxLength) return;
+        _entry += digit;
+        _message = "";
+        _shake = false;
+    }
+
+    private void OnDelete()
+    {
+        if (_countdown.Active || _entry.Length == 0) return;
+        _entry = _entry[..^1];
+        _shake = false;
+    }
+
+    // ---- Copy per view (signin spec §3) -------------------------------------------
+
+    private ViewCopy Copy() => _view switch
+    {
+        LockView.Enter when _flow == LockFlow.Setup =>
+            new("Set up your PIN", "4 to 6 digits. Roastline asks for it every time the app opens.", "Enter 4–6 digits", "Next"),
+        LockView.Enter when _flow == LockFlow.Reset =>
+            new("Choose a new PIN", "Your recovery code checked out. 4 to 6 digits.", "Enter 4–6 digits", "Next"),
+        LockView.Enter =>
+            new("Choose a new PIN", "4 to 6 digits.", "Enter 4–6 digits", "Next"),
+        LockView.Confirm =>
+            new("Confirm your PIN", "Enter the same PIN again.", "Re-enter your PIN", "Save"),
+        LockView.Verify =>
+            new("Enter your current PIN", "Confirm it's you before changing it.", "Enter your current PIN", "Next"),
+        _ =>
+            new("Welcome back", "Enter your PIN to open Roastline.", "Enter your PIN", "Unlock"),
+    };
+
+    // ---- Submitting a PIN entry -----------------------------------------------------
+
+    private async Task SubmitAsync()
+    {
+        if (_busy || _countdown.Active || !IsKeypadView) return;
+        if (_entry.Length < PinRules.MinLength)
+        {
+            Fail(PinMessages.TooShort);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            switch (_view)
+            {
+                case LockView.Enter:
+                    _firstEntry = _entry;
+                    GoTo(LockView.Confirm);
+                    break;
+
+                case LockView.Confirm:
+                    await ConfirmNewPinAsync();
+                    break;
+
+                case LockView.Unlock:
+                    HandleAttempt(await AppLock.UnlockAsync(_entry, _cts.Token), PinMessages.WrongPin, onSuccess: () =>
+                        ShowDone("Unlocked", "Opening Bookings…", "Open Bookings", redirects: true));
+                    break;
+
+                case LockView.Verify:
+                    var pin = _entry;
+                    HandleAttempt(await AppLock.VerifyPinAsync(pin, _cts.Token), PinMessages.WrongPin, onSuccess: () =>
+                    {
+                        _verifiedPin = pin;
+                        _flow = LockFlow.Change;
+                        GoTo(LockView.Enter);
+                    });
+                    break;
+            }
+        }
+        catch (AccessDeniedException)
+        {
+            ResetToStart(); // the app locked while we were working
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmNewPinAsync()
+    {
+        if (_entry != _firstEntry)
+        {
+            _firstEntry = "";
+            GoTo(LockView.Enter);
+            Fail(PinMessages.Mismatch);
+            return;
+        }
+
+        var newPin = _entry;
+        switch (_flow)
+        {
+            case LockFlow.Setup:
+                _recoveryCode = await AppLock.SetUpAsync(newPin, _cts.Token);
+                _savedAck = false;
+                GoTo(LockView.Recovery);
+                break;
+
+            case LockFlow.Reset:
+                var reset = await AppLock.ResetWithRecoveryCodeAsync(_verifiedCode, newPin, _cts.Token);
+                if (reset.Attempt.Succeeded)
+                {
+                    _recoveryCode = reset.NewRecoveryCode!;
+                    _savedAck = false;
+                    GoTo(LockView.Recovery);
+                }
+                else
+                {
+                    // Only possible if the lockout kicked in between the two steps.
+                    GoTo(LockView.Forgot);
+                    ApplyFailure(reset.Attempt, PinMessages.WrongRecoveryCode);
+                }
+                break;
+
+            case LockFlow.Change:
+                var changed = await AppLock.ChangeAsync(_verifiedPin, newPin, _cts.Token);
+                if (changed.Succeeded)
+                {
+                    ShowDone("PIN updated", "Use your new PIN the next time Roastline locks. Your recovery code stays the same.", "Back to Settings", redirects: false);
+                }
+                else
+                {
+                    _flow = LockFlow.Change;
+                    GoTo(LockView.Verify);
+                    ApplyFailure(changed, PinMessages.WrongPin);
+                }
+                break;
+        }
+    }
+
+    private void HandleAttempt(PinAttempt attempt, Func<int, string> wrongMessage, Action onSuccess)
+    {
+        if (attempt.Succeeded) onSuccess();
+        else ApplyFailure(attempt, wrongMessage);
+    }
+
+    private void ApplyFailure(PinAttempt attempt, Func<int, string> wrongMessage)
+    {
+        _entry = "";
+        _shake = true;
+        if (attempt.Status == PinAttemptStatus.LockedOut)
+        {
+            _message = "";
+            _countdown.Start(attempt.LockedUntil!.Value);
+        }
+        else
+        {
+            _message = wrongMessage(attempt.TriesLeft);
+        }
+    }
+
+    private void Fail(string message)
+    {
+        _message = message;
+        _shake = true;
+    }
+
+    private async Task ShowLockoutIfRunningAsync()
+    {
+        var status = await AppLock.GetLockoutAsync();
+        if (status.IsLockedOut) _countdown.Start(status.LockedUntil!.Value);
+    }
+
+    // ---- Forgot PIN ------------------------------------------------------------------
+
+    private async Task OpenForgot()
+    {
+        GoTo(LockView.Forgot);
+        await ShowLockoutIfRunningAsync();
+    }
+
+    private void BackToUnlock() => GoTo(LockView.Unlock);
+
+    private void OnCodeInput(ChangeEventArgs e) => _codeInput = e.Value?.ToString() ?? "";
+
+    private async Task VerifyCodeAsync()
+    {
+        if (_busy || _countdown.Active) return;
+        if (string.IsNullOrWhiteSpace(_codeInput))
+        {
+            _message = PinMessages.EmptyRecoveryCode;
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var code = _codeInput;
+            var attempt = await AppLock.VerifyRecoveryCodeAsync(code, _cts.Token);
+            if (attempt.Succeeded)
+            {
+                _verifiedCode = code;
+                _flow = LockFlow.Reset;
+                GoTo(LockView.Enter);
+            }
+            else if (attempt.Status == PinAttemptStatus.LockedOut)
+            {
+                _message = "";
+                _countdown.Start(attempt.LockedUntil!.Value);
+            }
+            else
+            {
+                _message = PinMessages.WrongRecoveryCode(attempt.TriesLeft);
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    // ---- Recovery code, done ---------------------------------------------------------
+
+    private async Task CopyCodeAsync()
+    {
+        try
+        {
+            await Clipboard.Default.SetTextAsync(_recoveryCode);
+            Toasts.Show("Recovery code copied", ToastDuration.Lock);
+        }
+        catch (Exception)
+        {
+            Toasts.Show("Copy not available — write it down", ToastDuration.Lock);
+        }
+    }
+
+    private void ContinueAfterCode()
+    {
+        if (!_savedAck) return;
+        var wasReset = _flow == LockFlow.Reset;
+        _recoveryCode = ""; // shown once; not kept after this screen
+        _verifiedCode = "";
+        ShowDone(wasReset ? "PIN reset" : "You're all set", "Opening Bookings…", "Open Bookings", redirects: true);
+    }
+
+    private void ShowDone(string title, string text, string button, bool redirects)
+    {
+        _doneTitle = title;
+        _doneText = text;
+        _doneButton = button;
+        _doneRedirects = redirects;
+        _verifiedPin = "";
+        GoTo(LockView.Done);
+        if (redirects) _ = RedirectToBookingsAfterDelayAsync();
+    }
+
+    private async Task RedirectToBookingsAfterDelayAsync()
+    {
+        try
+        {
+            await Task.Delay(1400, _cts.Token);
+            await InvokeAsync(() =>
+            {
+                if (_view == LockView.Done && _doneRedirects) Navigation.NavigateTo("bookings", replace: true);
+            });
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void LeaveDone() => Navigation.NavigateTo(_doneRedirects ? "bookings" : "settings", replace: true);
+
+    // ---- Navigation between views ------------------------------------------------------
+
+    /// <summary>Leaving a view clears the entry, first entry, code input and message (signin spec §10).</summary>
+    private void GoTo(LockView view)
+    {
+        _view = view;
+        _entry = "";
+        _firstEntry = view == LockView.Confirm ? _firstEntry : "";
+        _codeInput = "";
+        _message = "";
+        _shake = false;
+    }
+
+    private void CancelChange()
+    {
+        _verifiedPin = "";
+        Navigation.NavigateTo("settings", replace: true);
+    }
+
+    private void ResetToStart()
+    {
+        _flow = LockFlow.Setup;
+        _verifiedPin = "";
+        _verifiedCode = "";
+        _recoveryCode = "";
+        _changeMode = false;
+        GoTo(LockView.Unlock);
+    }
+
+    private void OnLockStateChanged()
+    {
+        if (!AppLock.IsLocked) return;
+        // Locked while a change-PIN flow was open (e.g. 10 minutes idle): back to Unlock, secrets cleared.
+        InvokeAsync(() =>
+        {
+            if (_changeMode || _view is LockView.Verify or LockView.Done)
+            {
+                ResetToStart();
+                StateHasChanged();
+            }
+        });
+    }
+
+    /// <summary>Android Back on the lock screen (signin spec §12.2).</summary>
+    private Task HandleBackAsync()
+    {
+        InvokeAsync(() =>
+        {
+            switch (_view)
+            {
+                case LockView.Forgot:
+                    BackToUnlock();
+                    break;
+                case LockView.Recovery:
+                    break; // does nothing, so the code can't be skipped
+                case LockView.Done:
+                    if (!_doneRedirects) LeaveDone();
+                    break;
+                case LockView.Enter or LockView.Confirm or LockView.Verify when _changeMode:
+                    CancelChange();
+                    break;
+                case LockView.Enter or LockView.Confirm when _flow == LockFlow.Reset:
+                    ResetToStart();
+                    break;
+                default:
+                    Backgrounder.MoveToBackground(); // unlock / first-run setup: never reveal pages
+                    break;
+            }
+            StateHasChanged();
+        });
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        AppLock.LockStateChanged -= OnLockStateChanged;
+        _backRegistration?.Dispose();
+        _countdown?.Dispose();
+        try { await JS.InvokeVoidAsync("roastit.releaseKeys"); }
+        catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException) { }
+        _self?.Dispose();
+        _cts.Dispose();
+    }
+}

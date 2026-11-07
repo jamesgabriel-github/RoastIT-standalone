@@ -1,0 +1,12 @@
+@* Sets the layout's top bar. Renders nothing itself. *@
+@code {
+    [CascadingParameter] private PageHeaderState Header { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string Subtitle { get; set; } = "";
+
+    /// <summary>False on pages without a floating action button (Settings).</summary>
+    [Parameter] public bool HasFab { get; set; } = true;
+
+    protected override void OnParametersSet() => Header.Set(Title, Subtitle, HasFab);
+}

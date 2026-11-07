@@ -1,0 +1,35 @@
+@inherits LayerComponentBase
+
+@* Full sheet: fills the phone, 440 px panel on the right at ≥ 768 px (shared-ui-spec §5). *@
+@if (Open)
+{
+    <div class="backdrop @(TopLayer ? "top-layer" : null)" @onclick="CloseAsync"></div>
+    <div class="sheet full @(TopLayer ? "top-layer" : null)" role="dialog" aria-modal="true" aria-label="@Title">
+        <div class="sheet-header">
+            <button type="button" class="icon-btn" aria-label="@CloseLabel" @onclick="CloseAsync"><Icon Name="@IconName" /></button>
+            <span class="sheet-title">@Title</span>
+            @HeaderActions
+        </div>
+        <div class="sheet-body">@ChildContent</div>
+        @if (Footer is not null)
+        {
+            <div class="sheet-footer">@Footer</div>
+        }
+    </div>
+}
+
+@code {
+    protected override LayerKind Kind => LayerKind.FullSheet;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    /// <summary>"close" (add/edit) or "back" (booking detail).</summary>
+    [Parameter] public string IconName { get; set; } = "close";
+    [Parameter] public string CloseLabel { get; set; } = "Close";
+
+    /// <summary>Opened over another sheet (z-index 60/61).</summary>
+    [Parameter] public bool TopLayer { get; set; }
+}
