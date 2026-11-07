@@ -55,10 +55,12 @@ public static class MauiProgram
 		builder.Services.AddScoped<BackupService>();
 		builder.Services.AddScoped<DataTransferService>();
 #if ANDROID
+		builder.Services.AddSingleton<IBackupFileSaver, AndroidBackupFileSaver>();
 		builder.Services.AddSingleton<AndroidCsvFileStore>();
 		builder.Services.AddSingleton<ICsvFileStore>(sp => sp.GetRequiredService<AndroidCsvFileStore>());
 		builder.Services.AddSingleton<ICsvFileShare>(sp => sp.GetRequiredService<AndroidCsvFileStore>());
 #else
+		builder.Services.AddSingleton<IBackupFileSaver, UnsupportedBackupFileSaver>();
 		builder.Services.AddSingleton<UnsupportedCsvFileStore>();
 		builder.Services.AddSingleton<ICsvFileStore>(sp => sp.GetRequiredService<UnsupportedCsvFileStore>());
 		builder.Services.AddSingleton<ICsvFileShare>(sp => sp.GetRequiredService<UnsupportedCsvFileStore>());

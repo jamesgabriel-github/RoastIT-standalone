@@ -708,7 +708,10 @@
       </ul>
       <p class="caption">Not included: your <b>PIN and recovery code</b> (they never leave this device), and theme and column settings.</p>
       <p class="caption">Save the file somewhere off this phone — Google Drive, email, or a computer.</p>
-      <button type="button" class="btn btn-primary btn-block" data-action="export-data">${icon(ICONS.download, 16)} Export backup</button>`);
+      <button type="button" class="btn btn-primary btn-block" data-action="export-data">${icon(ICONS.download, 16)} Export backup</button>
+      <!-- D33 (Android only in the real app): system "save as" screen; the prototype downloads the file the same way. -->
+      <p class="caption">Or choose the folder on this phone yourself.</p>
+      <button type="button" class="btn btn-block" data-action="export-data">${icon(ICONS.file, 16)} Save to a folder…</button>`);
   }
 
   function renderImportSheet() {

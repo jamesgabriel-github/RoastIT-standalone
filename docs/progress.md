@@ -338,13 +338,28 @@ lose (or after exporting).
     Tapping today's tile or *All* shows all dates; with the ten-year file, the all-dates list and the *All · N* chip only hold
     bookings from today − 6 months to today + 6 months, and the Dashboard for all dates matches.
 
+## D33 "Save to a folder…" device check (owner's request after the Phase 4 checkpoint; plan §10.5)
+
+Export now has a second button under **Export backup**: *Save to a folder…* (Android only). It opens Android's "save as" screen
+(`ACTION_CREATE_DOCUMENT`) through `AndroidBackupFileSaver`; `MainActivity.OnActivityResult` hands the result back; the logic is in
+`DataTransferService.SaveToFolderAsync`. Nothing here was run on a device; both targets build with 0 warnings.
+
+1. The button shows under the caption *Or choose the folder on this phone yourself.* in light and dark mode.
+2. Tap it → PIN prompt (every time) → the system "save as" screen opens with `roastline-backup-YYYYMMDD-HHmm.roastline` suggested,
+   **without locking the app** on the way there or back.
+3. Pick Downloads (or an SD card) and save: the toast reads *Backup saved: <name>*, the sheet closes, *Last export* updates, and the
+   file is in that folder with the **`.roastline` ending intact** (watch for a `.bin` added by Android) and is the right size.
+4. Rename the file in the "save as" screen: the toast shows the new name.
+5. Back out of the screen: the sheet stays open, no error, *Last export* unchanged. The next try asks for the PIN again.
+6. Import that saved file on another install (or after clearing data) to confirm it opens.
+7. Back closes the PIN prompt, then the sheet; Home afterwards still locks the app.
+
 ## Next: Phase 5 — Release is on hold (plan §14, §13 Phase 5)
 
 The Phase 4 checkpoint is cleared. The owner has put Phase 5 on hold, so **do not start it** until they say so.
 
 **Next step (start of the next session):** Phase 4 is still **uncommitted** in the working tree (and so are the date-picker and
-D31/D32 changes); commit it if the owner asks. Still open: the owner was offered a "Save to a folder…" export option (Storage
-Access Framework), which would also make Q29's "Last export" exact. No answer yet, so nothing is built.
+D31/D32 changes); commit it if the owner asks. **D33 "Save to a folder…" is built but not yet run on a device** (checklist below).
 
 When Phase 5 is resumed, it covers: the signing keystore (outside the repo), the signed release APK, a release build check
 (trimming can break EF Core: run the release build on the phone with real data), the upgrade test over the previous APK,

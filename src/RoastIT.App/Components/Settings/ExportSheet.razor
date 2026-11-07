@@ -18,6 +18,13 @@
     <button type="button" class="btn btn-primary btn-block" disabled="@_busy" @onclick="ExportAsync">
         <Icon Name="download" Size="16" /> @(_busy ? "Exporting…" : "Export backup")
     </button>
+    @if (Transfer.CanSaveToFolder)
+    {
+        <p class="caption">Or choose the folder on this phone yourself.</p>
+        <button type="button" class="btn btn-block" disabled="@_busy" @onclick="SaveToFolderAsync">
+            <Icon Name="file" Size="16" /> Save to a folder…
+        </button>
+    }
 </BottomSheet>
 
 @code {
@@ -36,7 +43,11 @@
         _wasOpen = Open;
     }
 
-    private async Task ExportAsync()
+    private Task ExportAsync() => RunAsync(toFolder: false);
+
+    private Task SaveToFolderAsync() => RunAsync(toFolder: true);
+
+    private async Task RunAsync(bool toFolder)
     {
         if (_busy) return;
         _error = null;
@@ -46,7 +57,8 @@
         _busy = true;
         try
         {
-            var exported = await Transfer.ExportAsync(pin.Confirmation);
+            var exported = toFolder ? await Transfer.SaveToFolderAsync(pin.Confirmation) : await Transfer.ExportAsync(pin.Confirmation);
+            if (exported is null) return; // backed out of the "save as" screen: the sheet stays open, nothing was saved
             await OnExported.InvokeAsync(exported);
         }
         catch (AccessDeniedException)

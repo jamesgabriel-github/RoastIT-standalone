@@ -126,6 +126,9 @@ Each opens its bottom sheet.
 4. Caption *Save the file somewhere off this phone — Google Drive, email,
    or a computer.*
 5. Primary full-width **Export backup** (download icon).
+6. *Android only (D33):* caption *Or choose the folder on this phone
+   yourself.* and a full-width secondary **Save to a folder…** (file icon).
+   Windows doesn't show it.
 
 **On tap**
 
@@ -139,6 +142,13 @@ Each opens its bottom sheet.
 3. Save `lastExportAt`, audit `data.exported`.
 4. The sheet closes; toast *Backup saved: roastline-backup-20261105-2232.roastline*.
 5. The reminder disappears and the Export subtitle updates.
+
+**Save to a folder… (D33):** same PIN prompt and same file steps 2.1–2.2,
+then the system "save as" screen instead of the share sheet. The file is
+copied to the place the owner picks, and only then are `lastExportAt` saved
+and the toast shown (with the name the owner saved it under). Backing out of
+the screen saves nothing, leaves the sheet open and shows no error; the PIN
+must be entered again for the next try.
 
 **Failure:** keep the sheet open and show an error toast. Don't update
 `lastExportAt`.

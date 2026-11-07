@@ -857,12 +857,22 @@ and recovery code.
    
    The copy is a throwaway file in the cache folder, so this never
    touches the live database.
-4. Hand it to the share sheet
-   (`Share.Default.RequestAsync(new ShareFileRequest { File = new ShareFile(path) })`)
-   so the owner can save it to Google Drive, email it, or copy it to a
-   computer.
+4. Deliver it. There are two buttons (D33):
+   - **Export backup** hands it to the share sheet
+     (`Share.Default.RequestAsync(new ShareFileRequest { File = new ShareFile(path) })`)
+     so the owner can save it to Google Drive, email it, or copy it to a
+     computer.
+   - **Save to a folder…** (Android) opens the system "save as" screen
+     (`ACTION_CREATE_DOCUMENT`, suggested name = the file name). The owner
+     picks the folder and may rename the file; the app copies the backup
+     into that one file and deletes the cache copy. No storage permission
+     is needed and no folder is remembered. If the owner backs out, nothing
+     is saved and the sheet stays open.
 5. Save `lastExportAt` in Preferences and write an `audit_logs` row
-   (`data.exported`).
+   (`data.exported`). With the share sheet `lastExportAt` is set once the
+   sheet has opened (Q29); with **Save to a folder…** only after the file
+   was written. The audit row is written when the copy is made, so it also
+   exists if the owner backs out of the "save as" screen.
 
 The `.roastline` file is an ordinary SQLite database with a custom
 extension.
@@ -1295,6 +1305,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D30 | **CSV backup is Android only for now**, saved to `Documents/Roastline/` through MediaStore *(was Q5)* | 2026-11-04 | §10.6 |
 | D31 | **Kitchen load chart uses a fixed day axis.** It always spans the whole selected date, 12 AM to 11:59 PM (business time), with an hourly tick (12 AM … 11 PM) every 40 px, so it is wider than the phone and **scrolls sideways**; the y-axis labels stay pinned. Bar parts outside the day are cut off, but their tooltips keep the real times. Today shows a dashed "now" line and opens centred on it; other dates open an hour before the first busy bar. Which items count is unchanged (Pending and Cooking only, late pending from now). *Replaces the old "earliest start … latest end" range with 3 or 5 ticks; the bookings prototype and spec §11 are updated to match* | 2026-11-07 | §7.6, bookings spec §11 |
 | D32 | **Bookings opens on today, and "all dates" means today ± 6 months** (owner's decision). `BookingScopeState` starts with today selected; tapping it again (or "All") shows all dates. "All dates" (the list, the status chips and the Dashboard) covers pickups from the start of today − 6 months to the end of today + 6 months, the same window the date strip and calendar allow. Older bookings stay in the database, in exports and in audit history, but the Bookings page doesn't show them. With ten years of generated data, the all-dates list read went from ≈540 ms to ≈90 ms on a desktop PC and no longer grows with history. *Was Q36; changes the Phase 3 default of "all dates = every booking", shown first* | 2026-11-07 | §7.4, §7.5, §7.6, bookings spec §2 |
+| D33 | **Export has a second button, "Save to a folder…"** (owner's request; Android). It opens the system "save as" screen so the owner chooses where on the phone the backup goes, and because the app writes the file itself it knows the save happened, so "Last export" is exact on this path. The share-sheet button stays as it was (Q29 still applies to it). Windows shows only the share button for now | 2026-11-07 | §10.5, settings spec §4.3 |
 
 ---
 

@@ -17,6 +17,7 @@ public sealed class DataTransferService(
     BackupService backups,
     PreferencesStore preferences,
     ExternalActivityGuard guard,
+    IBackupFileSaver saver,
     ILogger<DataTransferService> logger)
 {
     private static string ExportDir => Path.Combine(FileSystem.CacheDirectory, "exports");
@@ -31,8 +32,7 @@ public sealed class DataTransferService(
     /// </summary>
     public async Task<ExportedBackup> ExportAsync(PinConfirmation confirmation)
     {
-        ClearFolder(ExportDir); // only the newest throwaway copy is kept
-        var exported = await Task.Run(() => backups.ExportAsync(confirmation, ExportDir));
+        var exported = await MakeFileAsync(confirmation);
 
         guard.Expect();
         try
@@ -51,6 +51,46 @@ public sealed class DataTransferService(
         }
         preferences.LastExportAt = exported.CreatedAtUtc; // counts once the file exists and the share sheet opened (Q29)
         return exported;
+    }
+
+    /// <summary>True where the system "save as" screen is available (Android); the Export sheet shows "Save to a folder…".</summary>
+    public bool CanSaveToFolder => saver.IsSupported;
+
+    /// <summary>
+    /// "Save to a folder…" (D33): makes the backup file, then lets the owner choose where it goes. Unlike the share sheet,
+    /// the app knows the file was written, so the export time is recorded only then. Returns null when the owner backed
+    /// out of the "save as" screen (nothing saved, export time untouched; the PIN confirmation is already used up).
+    /// The returned name is the one the owner saved under. Throws when the file couldn't be made or written.
+    /// </summary>
+    public async Task<ExportedBackup?> SaveToFolderAsync(PinConfirmation confirmation)
+    {
+        if (!saver.IsSupported) throw new PlatformNotSupportedException("Saving to a folder is Android only for now.");
+        var exported = await MakeFileAsync(confirmation);
+
+        guard.Expect();
+        try
+        {
+            var savedName = await saver.SaveAsync(exported.FileName, exported.Path);
+            if (savedName is null) return null;
+            preferences.LastExportAt = exported.CreatedAtUtc;
+            return exported with { FileName = savedName };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Saving the backup file to a folder failed");
+            throw;
+        }
+        finally
+        {
+            guard.Cancel();
+            ClearFolder(ExportDir); // the saved copy is the backup; don't leave another one in the cache
+        }
+    }
+
+    private async Task<ExportedBackup> MakeFileAsync(PinConfirmation confirmation)
+    {
+        ClearFolder(ExportDir); // only the newest throwaway copy is kept
+        return await Task.Run(() => backups.ExportAsync(confirmation, ExportDir));
     }
 
     /// <summary>Opens the file picker, copies the pick into the cache and inspects it. Null when the owner cancelled.</summary>
