@@ -1,13 +1,196 @@
 @page "/bookings"
+@implements IDisposable
+@inject BookingService BookingData
+@inject DashboardService Dashboards
+@inject BookingScopeState Scope
+@inject IChangeNotifier Changes
 @inject ToastService Toasts
+@inject IBusinessCalendar Calendar
 
-@* Phase 3 builds the real Bookings screen. For now: an empty page. *@
-<PageHeading Title="Bookings" Subtitle="Orders, cooking status, and payments" />
+<PageHeading Title="Bookings" Subtitle="@BookingFormat.LongDate(Scope.Today)" />
 
-<EmptyState>Bookings will appear here. (Built in Phase 3.)</EmptyState>
+<DateStrip Scope="Scope" Counts="_countsByDate" OnOpenCalendar="OpenCalendar" />
 
-<Fab Label="New booking" OnClick="OnNewBooking" />
+<div class="scope">Showing <strong>@BookingFormat.ScopeLabel(Scope.SelectedDate, Scope.Today)</strong></div>
+
+<div class="segmented" role="tablist">
+    <button type="button" role="tab" class="seg @(Scope.ActiveTab == BookingTab.Dashboard ? "active" : null)"
+            aria-selected="@(Scope.ActiveTab == BookingTab.Dashboard ? "true" : "false")" @onclick="() => Scope.SetTab(BookingTab.Dashboard)">Dashboard</button>
+    <button type="button" role="tab" class="seg @(Scope.ActiveTab == BookingTab.List ? "active" : null)"
+            aria-selected="@(Scope.ActiveTab == BookingTab.List ? "true" : "false")" @onclick="() => Scope.SetTab(BookingTab.List)">Booking list</button>
+</div>
+
+@if (Scope.ActiveTab == BookingTab.Dashboard)
+{
+    if (_dashboard is { } data)
+    {
+        <DashboardTab Data="data" Date="Scope.SelectedDate" />
+    }
+}
+else
+{
+    <BookingListTab Scope="Scope" Rows="_rows" OnOpen="OpenDetail" OnAdvance="RequestAdvance" OnOpenSort="OpenSort" />
+}
+
+@if (!_createdOpen)
+{
+    <Fab Label="New booking" OnClick="OpenNew" />
+}
+
+<BookingDetailSheet Open="_detailOpen" BookingId="@_detailId" OnClose="CloseDetail" OnSelect="SelectBooking" />
+
+<NewBookingSheet Open="_newOpen" OnClose="CloseNew" Scope="Scope" OnCreated="ShowCreated" />
+
+<BookingSortSheet Open="_sortOpen" OnClose="CloseSort"
+                  Field="Scope.SortField" FieldChanged="OnSortField"
+                  Direction="Scope.SortDirection" DirectionChanged="OnSortDirection" />
+
+<CalendarSheet Open="_calendarOpen" OnClose="CloseCalendar" Scope="Scope" Counts="_countsByDate" />
+
+<ConfirmDialog Open="_advanceRow is not null" OnClose="CancelAdvance" Title="Update status?"
+               Message="@AdvanceMessage" ConfirmLabel="@AdvanceLabel" OnConfirm="ConfirmAdvanceAsync" />
+
+<BookingCreatedDialog Open="_createdOpen" Created="_created" OnClose="CloseCreated" />
 
 @code {
-    private void OnNewBooking() => Toasts.Show("New booking arrives in Phase 3", ToastDuration.Bookings);
+    private IReadOnlyList<BookingRow> _rows = [];
+    private IReadOnlyDictionary<DateOnly, int> _countsByDate = new Dictionary<DateOnly, int>();
+    private DashboardData? _dashboard;
+    private bool _detailOpen, _newOpen, _sortOpen, _calendarOpen, _createdOpen;
+    private string? _detailId;
+    private BookingRow? _advanceRow;
+    private CreatedBooking? _created;
+    private int _loadId;
+
+    private string AdvanceLabel => _advanceRow is { } r ? ItemStatusRules.ActionLabel(r.Status) ?? "Update" : "Update";
+
+    private string AdvanceMessage =>
+        _advanceRow is { } r && ItemStatusRules.Next(r.Status) is { } next
+            ? $"Mark booking {r.BookingId} as {ItemStatusRules.Label(next)}?"
+            : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Scope.Changed += OnScopeChanged;
+        Changes.BookingsChanged += OnBookingsChanged;
+        Changes.OrderChanged += OnOrderChanged;
+        Changes.CatalogChanged += OnCatalogChanged;
+        await LoadAsync();
+    }
+
+    // ---- Loading ---------------------------------------------------------------
+
+    private void OnScopeChanged() => Refresh();
+
+    private void OnBookingsChanged(DateOnly date) => Refresh();
+
+    private void OnOrderChanged(Guid orderKey) => Refresh();
+
+    // A renamed product changes the cards (name, cooking time).
+    private void OnCatalogChanged() => Refresh();
+
+    private void Refresh() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadAsync()
+    {
+        var id = ++_loadId;
+        try
+        {
+            var rows = await BookingData.ListAsync();
+            var dashboard = Scope.ActiveTab == BookingTab.Dashboard ? await Dashboards.GetAsync(Scope.SelectedDate) : null;
+            if (id != _loadId) return; // a newer load is already on its way
+
+            _rows = rows;
+            _countsByDate = BookingListing.CountsByDate(rows, Calendar);
+            _dashboard = dashboard;
+        }
+        catch (AccessDeniedException)
+        {
+            // Locked while loading: the lock screen takes over; the page reloads when shown again.
+        }
+    }
+
+    // ---- Detail ----------------------------------------------------------------
+
+    private void OpenDetail(BookingRow row)
+    {
+        _detailId = row.BookingId;
+        _detailOpen = true;
+    }
+
+    private void SelectBooking(string bookingId) => _detailId = bookingId;
+
+    private void CloseDetail() => _detailOpen = false;
+
+    // ---- New booking and the created dialog -------------------------------------
+
+    private void OpenNew() => _newOpen = true;
+
+    private void CloseNew() => _newOpen = false;
+
+    private void ShowCreated(CreatedBooking created)
+    {
+        _created = created;
+        _createdOpen = true;
+    }
+
+    private void CloseCreated()
+    {
+        _createdOpen = false;
+        _created = null;
+    }
+
+    // ---- Sort and calendar -----------------------------------------------------
+
+    private void OpenSort() => _sortOpen = true;
+
+    private void CloseSort() => _sortOpen = false;
+
+    private void OnSortField(BookingSortField field) => Scope.SetSort(field);
+
+    private void OnSortDirection(SortDirection direction) => Scope.SetSortDirection(direction);
+
+    private void OpenCalendar()
+    {
+        Scope.OpenCalendar();
+        _calendarOpen = true;
+    }
+
+    private void CloseCalendar() => _calendarOpen = false;
+
+    // ---- Quick advance from a card: confirm first (bookings spec §7.4) -----------
+
+    private void RequestAdvance(BookingRow row) => _advanceRow = row;
+
+    private void CancelAdvance() => _advanceRow = null;
+
+    private async Task ConfirmAdvanceAsync()
+    {
+        if (_advanceRow is not { } row) return;
+        _advanceRow = null;
+        try
+        {
+            var status = await BookingData.AdvanceStatusAsync(row.BookingId, row.Status);
+            Toasts.Show($"{row.BookingId} → {ItemStatusRules.Label(status)}", ToastDuration.Bookings);
+        }
+        catch (StaleStateException ex)
+        {
+            Toasts.Show(ex.Message, ToastDuration.Bookings);
+            await LoadAsync();
+        }
+        catch (ValidationException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); }
+        catch (AccessDeniedException) { /* the app locked: the lock screen takes over */ }
+    }
+
+    public void Dispose()
+    {
+        Scope.Changed -= OnScopeChanged;
+        Changes.BookingsChanged -= OnBookingsChanged;
+        Changes.OrderChanged -= OnOrderChanged;
+        Changes.CatalogChanged -= OnCatalogChanged;
+    }
 }

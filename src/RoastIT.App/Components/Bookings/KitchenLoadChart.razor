@@ -1,0 +1,150 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IBusinessCalendar Calendar
+@inject IClock Clock
+
+@* Kitchen load: items cooking at once over the selected day, 12 AM to 11:59 PM (bookings spec §11, D31). The y-axis labels
+   stay put while the plot scrolls sideways. Tap a bar to read its window. *@
+@if (_chart is { } k)
+{
+    <div class="kchart">
+        <svg class="kchart-axis" width="@F(KitchenChartLayout.AxisWidth)" height="@k.Height" aria-hidden="true">
+            @foreach (var tick in k.YTicks)
+            {
+                @Txt("ktick", KitchenChartLayout.AxisWidth - 6, tick.Y + 3.5, "end", tick.Label)
+            }
+        </svg>
+        <div class="kchart-scroll" @ref="_scroll">
+            <svg width="@k.PlotWidth" height="@k.Height" role="img" aria-label="Kitchen load: items cooking at once from 12 AM to 11:59 PM">
+                @foreach (var tick in k.YTicks)
+                {
+                    <line class="kgrid" x1="0" x2="@F(k.PlotRight)" y1="@F(tick.Y)" y2="@F(tick.Y)"></line>
+                }
+                @foreach (var bar in k.Bars)
+                {
+                    <rect class="kbar @(_selected == bar.Index ? "sel" : null)" x="@F(bar.X)" y="@F(bar.Y)" width="@F(Math.Max(0.5, bar.Width - 1))" height="@F(bar.Height)" rx="2"></rect>
+                    @if (bar.ShowLabel)
+                    {
+                        @Txt("kcount", bar.X + bar.Width / 2, bar.Y - 5, "middle", bar.Count.ToString())
+                    }
+                    <rect class="khit" x="@F(bar.X)" y="@F(k.PlotTop)" width="@F(bar.Width)" height="@F(k.BaseY - k.PlotTop)"
+                          @onclick="() => Select(bar.Index)"><title>@bar.Tooltip</title></rect>
+                }
+                @if (k.NowX is { } nowX)
+                {
+                    <line class="know" x1="@F(nowX)" x2="@F(nowX)" y1="@F(k.PlotTop - 8)" y2="@F(k.BaseY)"></line>
+                }
+                <line class="kaxis" x1="0" x2="@F(k.PlotRight)" y1="@F(k.BaseY)" y2="@F(k.BaseY)"></line>
+                @foreach (var tick in k.XTicks)
+                {
+                    <line class="kaxis" x1="@F(tick.X)" x2="@F(tick.X)" y1="@F(k.BaseY)" y2="@F(k.BaseY + 3)"></line>
+                    @Txt("ktick", tick.X, k.BaseY + 16, tick.Anchor, tick.Label)
+                }
+            </svg>
+        </div>
+    </div>
+    <div class="kchart-cap">Time of day@(k.NowX is null ? null : " · dashed line = now")</div>
+    <div class="kreadout" aria-live="polite">
+        @if (_selected is { } index && index < k.Bars.Count)
+        {
+            var bar = k.Bars[index];
+            <b>@bar.Count cooking</b><text> · @bar.StartLabel – @bar.EndLabel</text>
+        }
+        else
+        {
+            <text>Tap a bar to see its time window.</text>
+        }
+    </div>
+}
+
+@code {
+    private KitchenChart? _chart;
+    private int? _selected;
+    private int _width = KitchenChartLayout.WidthFor(375);
+    private DateOnly? _lastDate;
+    private bool _scrollPending = true;
+    private ElementReference _scroll;
+    private DotNetObjectReference<KitchenLoadChart>? _self;
+
+    [Parameter, EditorRequired] public IReadOnlyList<KitchenBar> Bars { get; set; } = [];
+
+    /// <summary>The selected date. A different date clears the selected bar and scrolls the chart back to its opening spot.</summary>
+    [Parameter] public DateOnly? Date { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (_lastDate != Date)
+        {
+            _selected = null;
+            _scrollPending = true;
+        }
+        _lastDate = Date;
+        Rebuild();
+        if (_selected >= (_chart?.Bars.Count ?? 0)) _selected = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            try
+            {
+                var screen = await JS.InvokeAsync<int>("roastit.watchWidth", _self);
+                await SetWidthAsync(screen);
+            }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+        }
+
+        // A data refresh keeps the user's scroll; only a new date or width moves it.
+        if (_scrollPending && _chart is { } k)
+        {
+            _scrollPending = false;
+            try { await JS.InvokeVoidAsync("roastit.scrollLeftTo", _scroll, k.ScrollLeft); }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    [JSInvokable]
+    public Task OnScreenWidth(int screen) => SetWidthAsync(screen);
+
+    private Task SetWidthAsync(int screen) => InvokeAsync(() =>
+    {
+        var width = KitchenChartLayout.WidthFor(screen);
+        if (width == _width) return;
+        _width = width;
+        _scrollPending = true;
+        Rebuild();
+        StateHasChanged();
+    });
+
+    private void Rebuild() =>
+        _chart = Date is { } date ? KitchenChartLayout.Build(Bars, _width, Calendar, date, Clock.UtcNow) : null;
+
+    private void Select(int index) => _selected = _selected == index ? null : index;
+
+    // Razor treats a literal <text> tag as its own directive, so SVG text is built with the render tree. It is created in the SVG
+    // namespace because its parent is an <svg> element.
+    private static RenderFragment Txt(string cssClass, double x, double y, string anchor, string text) => builder =>
+    {
+        builder.OpenElement(0, "text");
+        builder.AddAttribute(1, "class", cssClass);
+        builder.AddAttribute(2, "x", F(x));
+        builder.AddAttribute(3, "y", F(y));
+        builder.AddAttribute(4, "text-anchor", anchor);
+        builder.AddContent(5, text);
+        builder.CloseElement();
+    };
+
+    private static string F(double value) => value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("roastit.unwatchWidth"); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        _self?.Dispose();
+    }
+}

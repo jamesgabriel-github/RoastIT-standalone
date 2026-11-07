@@ -1,0 +1,434 @@
+@implements IDisposable
+@inject BookingService Bookings
+@inject OrderService Orders
+@inject PinPromptService Pin
+@inject ToastService Toasts
+@inject IChangeNotifier Changes
+@inject IBusinessCalendar Calendar
+@inject IJSRuntime JS
+
+@* Booking detail full sheet (bookings spec §8). Every rule is also enforced by the services; this only hides what doesn't apply. *@
+<Sheet Open="Open" OnClose="OnClose" Title="@(BookingId ?? "")" TitleClass="mono" IconName="back" CloseLabel="Back"
+       Footer="FooterFragment">
+    <HeaderActions>
+        @if (_detail is { } head)
+        {
+            <StatusPill Kind="@StatusKey(head.Item.Status)" Label="@ItemStatusRules.Label(head.Item.Status)" />
+            <span style="width:6px;"></span>
+        }
+    </HeaderActions>
+    <ChildContent>
+        @if (_detail is { } d)
+        {
+            var item = d.Item;
+            var cancelled = item.OrderCancelled;
+            var editorOpen = _editor != Editor.None;
+            var hasDiscount = item.DiscountAmount > 0;
+
+            <section class="card">
+                <p class="dsec-title">Booking</p>
+                <div class="drow"><span class="k">Product</span><span class="v">@item.ProductName</span></div>
+                <div class="drow"><span class="k">Cooking time</span><span class="v">@DurationFormat.Format(item.CookingTimeMin)</span></div>
+                <div class="drow"><span class="k">Pickup</span><span class="v">@BookingFormat.DateTimeShort(Calendar.ToLocal(item.PickupAt))</span></div>
+            </section>
+
+            <section class="card">
+                <p class="dsec-title">Customer</p>
+                <div class="drow"><span class="k">Name</span><span class="v">@item.CustomerLabel</span></div>
+                <div class="drow">
+                    <span class="k">Phone</span>
+                    <span class="v">
+                        @if (string.IsNullOrWhiteSpace(item.Phone))
+                        {
+                            <span class="muted" style="font-weight:500;">Not on file</span>
+                        }
+                        else
+                        {
+                            <a class="tel" href="tel:@PhoneDigits(item.Phone)">@item.Phone</a>
+                        }
+                    </span>
+                </div>
+            </section>
+
+            <section class="card">
+                <p class="dsec-title">Payment</p>
+                <div class="drow"><span class="k">Total amount</span><span class="v mono">@Money.Format(item.TotalAmount)</span></div>
+
+                @if (!hasDiscount && !editorOpen && !cancelled)
+                {
+                    <div class="link-row"><button type="button" class="link-btn" @onclick="OpenDiscount">+ Apply discount</button></div>
+                }
+                @if (hasDiscount && _editor != Editor.Discount)
+                {
+                    <div class="drow">
+                        <span class="k">
+                            Discount
+                            @if (_editor != Editor.Payment && !cancelled)
+                            {
+                                <button type="button" class="text-btn" @onclick="OpenDiscount">Edit</button>
+                                <button type="button" class="text-btn" @onclick="RemoveDiscountAsync">Remove</button>
+                            }
+                        </span>
+                        <span class="v mono" style="color:var(--status-cooked);">−@Money.Format(item.DiscountAmount)</span>
+                    </div>
+                    <div class="drow"><span class="k">Net total</span><span class="v mono">@Money.Format(item.NetTotal)</span></div>
+                }
+                @if (_editor == Editor.Discount)
+                {
+                    <div class="inline-editor">
+                        <label class="field-label" for="discount-input">Discount amount</label>
+                        <span class="money-input">
+                            <span class="prefix">₱</span>
+                            <input id="discount-input" class="input" type="number" inputmode="decimal" min="0" placeholder="0" @ref="_input"
+                                   @bind="_draft" @bind:event="oninput" />
+                        </span>
+                        <span class="caption">Can't be more than the order total (@Money.Format(item.TotalAmount)).</span>
+                        @if (_error.Length > 0) { <p class="form-error" role="alert">@_error</p> }
+                        <div class="inline-row">
+                            <button type="button" class="btn btn-sm" @onclick="CloseEditor">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-primary" disabled="@_busy" @onclick="SaveDiscountAsync">Save discount</button>
+                        </div>
+                    </div>
+                }
+
+                <div class="drow"><span class="k">Amount paid</span><span class="v mono">@Money.Format(item.AmountPaid)</span></div>
+
+                @if (item.BalanceDue > 0 && !editorOpen && !cancelled)
+                {
+                    <div class="link-row"><button type="button" class="link-btn" @onclick="OpenPayment">+ Record payment</button></div>
+                }
+                @if (_editor == Editor.Payment)
+                {
+                    <div class="inline-editor">
+                        <label class="field-label" for="payment-input">Payment received</label>
+                        <span class="money-input">
+                            <span class="prefix">₱</span>
+                            <input id="payment-input" class="input" type="number" inputmode="decimal" min="0" placeholder="0" @ref="_input"
+                                   @bind="_draft" @bind:event="oninput" />
+                        </span>
+                        <span class="caption">Added to what's already been paid. Change it for a partial payment.</span>
+                        @if (_error.Length > 0) { <p class="form-error" role="alert">@_error</p> }
+                        <div class="inline-row">
+                            <button type="button" class="btn btn-sm" @onclick="CloseEditor">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-primary" disabled="@_busy" @onclick="SavePaymentAsync">Save payment</button>
+                        </div>
+                    </div>
+                }
+
+                <div class="drow big">
+                    <span class="k" style="color:var(--fg); font-weight:700;">Balance due</span>
+                    <span class="v mono" style="color:@(item.BalanceDue > 0 ? "var(--status-cooking)" : "var(--status-cooked)");">@Money.Format(item.BalanceDue)</span>
+                </div>
+
+                @if (!editorOpen && !cancelled && OrderMath.IsWriteOffBalance(item.TotalAmount, item.DiscountAmount, item.AmountPaid))
+                {
+                    <div class="writeoff">
+                        <span>Only <b class="mono">@Money.Format(item.Balance)</b> left (@OrderMath.BalancePercentOfTotal(item.TotalAmount, item.Balance).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)% of total)</span>
+                        <button type="button" class="btn btn-sm" disabled="@_busy" @onclick="WriteOffAsync">Discount remaining balance</button>
+                    </div>
+                }
+            </section>
+
+            @if (d.Siblings.Any())
+            {
+                <section class="card">
+                    <p class="dsec-title">Also in this order</p>
+                    <div class="sib-list">
+                        @foreach (var sibling in d.Siblings)
+                        {
+                            <button type="button" class="sib" @key="sibling.BookingId" @onclick="() => OnSelect.InvokeAsync(sibling.BookingId)">
+                                <span class="sib-text"><span class="bid">@sibling.BookingId</span><span>@sibling.ProductName</span></span>
+                                <StatusPill Kind="@StatusKey(sibling.Status)" Label="@ItemStatusRules.Label(sibling.Status)" />
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (d.ShowCantCancelCaption)
+            {
+                <p class="caption">@BookingMessages.CantCancelCaption</p>
+            }
+        }
+        else if (Open && _missing)
+        {
+            <EmptyState>@BookingMessages.OrderGone</EmptyState>
+        }
+    </ChildContent>
+</Sheet>
+
+@code {
+    private enum Editor { None, Discount, Payment }
+
+    private BookingDetail? _detail;
+    private Editor _editor;
+    private string _draft = "", _error = "";
+    private bool _busy, _missing, _wasOpen, _focusPending;
+    private string? _loadedId;
+    private ElementReference _input;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The booking being viewed.</summary>
+    [Parameter] public string? BookingId { get; set; }
+
+    /// <summary>Tapping a booking under "Also in this order" switches the sheet to it.</summary>
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Changes.OrderChanged += OnOrderChanged;
+        Changes.BookingsChanged += OnBookingsChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Open)
+        {
+            if (_wasOpen) Reset();
+            _wasOpen = false;
+            return;
+        }
+
+        // Opening, or switching to a sibling: editors close and the booking is loaded afresh.
+        if (!_wasOpen || BookingId != _loadedId)
+        {
+            _editor = Editor.None;
+            _draft = _error = "";
+            _detail = null;
+            _wasOpen = true;
+            await LoadAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending) return;
+        _focusPending = false;
+        try { await JS.InvokeVoidAsync("roastit.focusSelect", _input); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void Reset()
+    {
+        _detail = null;
+        _loadedId = null;
+        _editor = Editor.None;
+        _draft = _error = "";
+        _busy = _missing = false;
+    }
+
+    private void OnOrderChanged(Guid key) => Refresh();
+
+    private void OnBookingsChanged(DateOnly date) => Refresh();
+
+    private void Refresh() => InvokeAsync(async () =>
+    {
+        if (!Open || BookingId is null) return;
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadAsync()
+    {
+        var id = BookingId;
+        _loadedId = id;
+        if (id is null) return;
+        try
+        {
+            _detail = await Bookings.GetDetailAsync(id);
+            _missing = _detail is null;
+        }
+        catch (AccessDeniedException)
+        {
+            // Locked: the lock screen takes over.
+        }
+    }
+
+    private static string StatusKey(ItemStatus status) => status.ToString().ToLowerInvariant();
+
+    private static string PhoneDigits(string phone) => new string(phone.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
+    // ---- Footer ---------------------------------------------------------------
+
+    private RenderFragment? FooterFragment
+    {
+        get
+        {
+            if (_detail is not { } d) return null;
+            var next = ItemStatusRules.ActionLabel(d.Item.Status);
+            if (!d.CanCancel && next is null) return null;
+            return __builder =>
+            {
+                if (d.CanCancel)
+                {
+                    <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="CancelOrderAsync">@d.CancelLabel</button>
+                }
+                if (next is not null)
+                {
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="AdvanceAsync"><Icon Name="check" Size="16" /> @next</button>
+                }
+            };
+        }
+    }
+
+    // ---- Advance (immediate, no confirmation; bookings spec §8.6) ----------------
+
+    private async Task AdvanceAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+        _busy = true;
+        try
+        {
+            var status = await Bookings.AdvanceStatusAsync(d.Item.BookingId, d.Item.Status);
+            Toasts.Show($"{d.Item.BookingId} → {ItemStatusRules.Label(status)}", ToastDuration.Bookings);
+        }
+        catch (StaleStateException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); }
+        catch (ValidationException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    // ---- Editors --------------------------------------------------------------
+
+    private void OpenDiscount()
+    {
+        if (_detail is not { } d) return;
+        _editor = Editor.Discount; // opening one editor closes the other
+        _draft = d.Item.DiscountAmount > 0 ? Money.ToFieldText(d.Item.DiscountAmount) : "";
+        _error = "";
+        _focusPending = true;
+    }
+
+    private void OpenPayment()
+    {
+        if (_detail is not { } d) return;
+        _editor = Editor.Payment;
+        _draft = Money.ToFieldText(d.Item.Balance); // pre-filled with what's still owed
+        _error = "";
+        _focusPending = true;
+    }
+
+    private void CloseEditor()
+    {
+        _editor = Editor.None;
+        _draft = _error = "";
+    }
+
+    // ---- Discount (no PIN) ----------------------------------------------------
+
+    private async Task SaveDiscountAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+        // Blank, invalid or 0 removes the discount (bookings spec §8.3). The service clamps to [0, total].
+        var amount = Money.TryParsePesos(_draft, out var parsed) && parsed > 0 ? parsed : 0;
+        await RunAsync(async () =>
+        {
+            await Orders.SetDiscountAsync(d.Item.OrderKey, amount);
+            CloseEditor();
+        });
+    }
+
+    private Task RemoveDiscountAsync() => _detail is not { } d || _busy
+        ? Task.CompletedTask
+        : RunAsync(async () =>
+        {
+            await Orders.SetDiscountAsync(d.Item.OrderKey, 0);
+            CloseEditor();
+        });
+
+    // ---- Payment (Bookings PIN, 3-minute window) ------------------------------
+
+    private async Task SavePaymentAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+
+        // Blank, invalid or 0: the editor just closes. No PIN, nothing saved.
+        if (!Money.TryParsePesos(_draft, out var amount) || amount <= 0)
+        {
+            CloseEditor();
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var prompt = await Pin.RequestAsync(
+                BookingPrompts.RecordPayment(amount, d.Item.CustomerLabel, d.Item.BookingId), "Record", PinScope.Bookings);
+            if (!prompt.Confirmed) return; // cancelling the PIN leaves the editor open with the amount
+
+            await Orders.RecordPaymentAsync(d.Item.OrderKey, amount, prompt.Confirmation);
+            CloseEditor();
+            Toasts.Show($"Recorded {Money.Format(amount)} payment", ToastDuration.Bookings);
+        }
+        catch (PinRequiredException) { _error = "That PIN check expired. Try saving again."; }
+        catch (ValidationException ex) { _error = ex.Message; }
+        catch (StaleStateException ex) { _error = ex.Message; }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    // ---- Write off the small remaining balance (Bookings PIN) -------------------
+
+    private async Task WriteOffAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+        _busy = true;
+        try
+        {
+            var prompt = await Pin.RequestAsync(
+                BookingPrompts.Waive(d.Item.Balance, d.Item.CustomerLabel, d.Item.BookingId), "Waive", PinScope.Bookings);
+            if (!prompt.Confirmed) return;
+
+            await Orders.WriteOffBalanceAsync(d.Item.OrderKey, prompt.Confirmation);
+            Toasts.Show("Remaining balance waived", ToastDuration.Bookings);
+        }
+        catch (PinRequiredException) { Toasts.Show("That PIN check expired. Try again.", ToastDuration.Bookings); }
+        catch (ValidationException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); }
+        catch (StaleStateException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    // ---- Cancel the whole order (Bookings PIN) ----------------------------------
+
+    private async Task CancelOrderAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+        _busy = true;
+        try
+        {
+            var active = d.OrderItems.Where(r => r.Status != ItemStatus.Cancelled).Select(r => r.BookingId).ToList();
+            var prompt = await Pin.RequestAsync(
+                BookingPrompts.Cancel(active, d.Item.CustomerLabel, d.Item.AmountPaid), "Confirm", PinScope.Bookings);
+            if (!prompt.Confirmed) return;
+
+            var cancelled = await Orders.CancelOrderAsync(d.Item.OrderKey, prompt.Confirmation);
+            CloseEditor();
+            Toasts.Show(BookingPrompts.Cancelled(cancelled), ToastDuration.Bookings);
+        }
+        catch (PinRequiredException) { Toasts.Show("That PIN check expired. Try again.", ToastDuration.Bookings); }
+        catch (ValidationException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); } // changed under the open sheet
+        catch (StaleStateException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        try { await action(); }
+        catch (ValidationException ex) { _error = ex.Message; }
+        catch (StaleStateException ex) { _error = ex.Message; }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    public void Dispose()
+    {
+        Changes.OrderChanged -= OnOrderChanged;
+        Changes.BookingsChanged -= OnBookingsChanged;
+    }
+}

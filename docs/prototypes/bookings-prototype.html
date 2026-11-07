@@ -253,15 +253,18 @@
   .bal-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
   .bal-row:first-child { border-top: none; padding-top: 0; }
   .bal-name { font-weight: 600; font-size: 14px; }
-  .kchart { display: block; width: 100%; height: auto; }
+  .kchart { display: flex; align-items: flex-start; min-width: 0; }
+  .kchart svg { display: block; flex: none; }
+  .kchart-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; padding-bottom: 6px; }
+  .kchart-cap { font-size: 10.5px; color: var(--fg-muted); text-align: center; margin-top: 2px; }
   .kbar { fill: var(--status-cooking); opacity: 0.78; }
   .kbar.sel { opacity: 1; fill: var(--accent); }
   .khit { fill: transparent; cursor: pointer; }
   .ktick { font-family: var(--font-mono); font-size: 10.5px; fill: var(--fg-muted); }
-  .kcap { font-family: var(--font-body); font-size: 10.5px; fill: var(--fg-muted); }
   .kcount { font-family: var(--font-mono); font-size: 11px; font-weight: 600; fill: var(--fg); }
   .kgrid { stroke: var(--border); stroke-width: 1; }
   .kaxis { stroke: var(--fg-muted); stroke-width: 1; }
+  .know { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
   .kreadout { margin-top: 8px; font-size: 12.5px; color: var(--fg-muted); min-height: 18px; }
   .kreadout b { color: var(--fg); }
 
@@ -456,8 +459,11 @@
    - Booking cards show the ORDER's money ("Order ₱4,400 · Paid ₱2,000"), so a booking
      from a multi-booking order carries a "1 of 2" tag after its ID (numbered by booking
      ID, cancelled included) to show the figures are shared with other cards.
-   - Kitchen load: real SVG <text> labels sized to the screen, tap a bar to read its
-     time window (no hover on touch).
+   - Kitchen load (D31): a fixed 12 AM – 11:59 PM axis for the selected date, 40 px per
+     hour with a label under every hour, so the plot scrolls sideways while the y-axis
+     labels stay put. Today shows a dashed "now" line and opens centred on it; other
+     dates open an hour before the first busy bar. Tap a bar to read its time window
+     (no hover on touch).
 
    Rendering: full re-render on clicks (scroll positions preserved); typing only
    redraws the regions that depend on it, so the keyboard never closes mid-typing.
@@ -621,6 +627,13 @@
     const ampm = h >= 12 ? 'PM' : 'AM';
     h = h % 12; if (h === 0) h = 12;
     return h + ':' + pad2(m) + ' ' + ampm;
+  }
+  // "5 PM": the kitchen chart's hour ticks.
+  function formatHourFromMinutes(absMin) {
+    let h = Math.floor((((Math.round(absMin) % 1440) + 1440) % 1440) / 60);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return h + ' ' + ampm;
   }
   function nowOnToday() {
     const now = new Date();
@@ -1397,8 +1410,11 @@
 
     // ---- kitchen load (specific date, today or later) ----
     const showKitchenLoad = !!selectedDate && selectedDate >= TODAY;
-    const CW = kitchenChartWidth(), CH = 200;
-    const kitchen = { hasData: false, bars: [], xTicks: [], yTicks: [], CW, CH, baseY: 0, padLeft: 30, padRight: 8, plotTop: 18 };
+    // D31: fixed day axis, 12 AM – 11:59 PM of the selected date, HOUR_W px per hour. The plot is wider than the
+    // screen and scrolls sideways; the y-axis labels sit in a fixed AXIS_W column to its left.
+    const CW = kitchenChartWidth(), CH = 184, AXIS_W = 30, HOUR_W = 40;
+    const kitchen = { hasData: false, bars: [], xTicks: [], yTicks: [], CW, CH, axisW: AXIS_W, baseY: 0, plotTop: 18,
+      plotRight: 24 * HOUR_W, plotWidth: 24 * HOUR_W + 8, nowX: null, openScroll: 0 };
     if (showKitchenLoad) {
       const nowMin = toAbsMinutes(nowOnToday());
       const intervals = dashItems.filter((it) => it.status === 'pending' || it.status === 'cooking').map((it) => {
@@ -1418,7 +1434,6 @@
       });
       if (intervals.length > 0) {
         kitchen.hasData = true;
-        const rangeStart = Math.min.apply(null, intervals.map((iv) => iv.startMin));
         const rangeEnd = Math.max.apply(null, intervals.map((iv) => iv.endMin));
         const deltaMap = {};
         intervals.forEach((iv) => {
@@ -1430,34 +1445,44 @@
         const steps = times.map((t) => { running += deltaMap[t]; return { t, count: running }; });
         const maxCount = steps.reduce((m, s) => Math.max(m, s.count), 0);
 
-        const padLeft = kitchen.padLeft, padRight = kitchen.padRight, padTop = kitchen.plotTop, padBottom = 40;
-        const plotW = CW - padLeft - padRight, plotH = CH - padTop - padBottom;
-        const span = Math.max(1, rangeEnd - rangeStart);
-        const xScale = (t) => padLeft + ((t - rangeStart) / span) * plotW;
+        const padTop = kitchen.plotTop, padBottom = 24;
+        const plotH = CH - padTop - padBottom;
+        const dayStart = toAbsMinutes(selectedDate + 'T00:00'), dayEnd = dayStart + 1440;
+        const xScale = (t) => ((t - dayStart) / 60) * HOUR_W;
         const yScale = (c) => padTop + (1 - (maxCount > 0 ? c / maxCount : 0)) * plotH;
         const yBase = padTop + plotH;
         kitchen.baseY = yBase;
         kitchen.plotH = plotH;
 
+        // Bar parts outside the day are cut off; the tooltip and readout keep the bar's real times.
         kitchen.bars = steps.map((s, i) => {
           const segEnd = (i + 1 < steps.length) ? steps[i + 1].t : rangeEnd;
-          const x1 = xScale(s.t), x2 = xScale(segEnd);
+          const x1 = xScale(Math.max(s.t, dayStart)), x2 = xScale(Math.min(segEnd, dayEnd));
           const yTop = yScale(s.count);
           return {
-            index: i, x: x1, width: Math.max(0, x2 - x1), y: yTop, height: Math.max(0, yBase - yTop),
+            x: x1, width: x2 - x1, y: yTop, height: Math.max(0, yBase - yTop),
             count: s.count, showLabel: (x2 - x1) >= 18 && s.count > 0,
             startLabel: formatClockFromMinutes(s.t), endLabel: formatClockFromMinutes(segEnd),
             tooltip: s.count + ' cooking · ' + formatClockFromMinutes(s.t) + ' – ' + formatClockFromMinutes(segEnd)
           };
-        }).filter((b) => b.width > 0);
+        }).filter((b) => b.width > 0).map((b, i) => Object.assign(b, { index: i }));
 
-        const tickCount = CW < 420 ? 3 : 5;
-        for (let i = 0; i <= tickCount; i++) {
-          const t = rangeStart + (span * i) / tickCount;
-          kitchen.xTicks.push({ x: xScale(t), label: formatClockFromMinutes(t), anchor: i === 0 ? 'start' : (i === tickCount ? 'end' : 'middle') });
+        // One tick per hour: 12 AM … 11 PM. The first is left-anchored so it isn't clipped.
+        for (let h = 0; h < 24; h++) {
+          kitchen.xTicks.push({ x: h * HOUR_W, label: formatHourFromMinutes(dayStart + h * 60), anchor: h === 0 ? 'start' : 'middle' });
         }
         const yStep = maxCount > 6 ? 2 : 1;
         for (let c = 0; c <= maxCount; c += yStep) kitchen.yTicks.push({ y: yScale(c), label: String(c) });
+
+        // Today: a "now" line, and the chart opens centred on it. Other dates open an hour before the first busy bar.
+        const nowAbs = toAbsMinutes(nowOnToday());
+        if (nowAbs >= dayStart && nowAbs < dayEnd) kitchen.nowX = xScale(nowAbs);
+        const visible = CW - AXIS_W;
+        const firstBusy = kitchen.bars.find((b) => b.count > 0);
+        const target = kitchen.nowX != null ? kitchen.nowX - visible / 2 : (firstBusy ? firstBusy.x - HOUR_W : 0);
+        kitchen.openScroll = Math.min(Math.max(0, target), Math.max(0, kitchen.plotWidth - visible));
+        // A new date or width gets a new scroll key, so it opens at openScroll; other re-renders keep the user's scroll.
+        kitchen.scrollKey = 'kitchen-' + selectedDate + '-' + CW;
       }
     }
 
@@ -1603,21 +1628,29 @@
 
   function renderKitchenChart(k) {
     const sel = state.kitchenSel;
-    const grid = k.yTicks.map((t) => `<line class="kgrid" x1="${k.padLeft}" x2="${k.CW - k.padRight}" y1="${t.y.toFixed(1)}" y2="${t.y.toFixed(1)}"></line><text class="ktick" x="${k.padLeft - 6}" y="${(t.y + 3.5).toFixed(1)}" text-anchor="end">${t.label}</text>`).join('');
+    const yLabels = k.yTicks.map((t) => `<text class="ktick" x="${k.axisW - 6}" y="${(t.y + 3.5).toFixed(1)}" text-anchor="end">${t.label}</text>`).join('');
+    const grid = k.yTicks.map((t) => `<line class="kgrid" x1="0" x2="${k.plotRight}" y1="${t.y.toFixed(1)}" y2="${t.y.toFixed(1)}"></line>`).join('');
     const bars = k.bars.map((b) => `
       <rect class="kbar ${sel === b.index ? 'sel' : ''}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${Math.max(0.5, b.width - 1).toFixed(1)}" height="${b.height.toFixed(1)}" rx="2"></rect>
       ${b.showLabel ? `<text class="kcount" x="${(b.x + b.width / 2).toFixed(1)}" y="${(b.y - 5).toFixed(1)}" text-anchor="middle">${b.count}</text>` : ''}
       <rect class="khit" data-action="kitchen-bar" data-index="${b.index}" x="${b.x.toFixed(1)}" y="${k.plotTop}" width="${b.width.toFixed(1)}" height="${(k.baseY - k.plotTop).toFixed(1)}"><title>${esc(b.tooltip)}</title></rect>`).join('');
-    const xTicks = k.xTicks.map((t) => `<text class="ktick" x="${t.x.toFixed(1)}" y="${(k.baseY + 16).toFixed(1)}" text-anchor="${t.anchor}">${t.label}</text>`).join('');
+    const xTicks = k.xTicks.map((t) => `<line class="kaxis" x1="${t.x.toFixed(1)}" x2="${t.x.toFixed(1)}" y1="${k.baseY.toFixed(1)}" y2="${(k.baseY + 3).toFixed(1)}"></line><text class="ktick" x="${t.x.toFixed(1)}" y="${(k.baseY + 16).toFixed(1)}" text-anchor="${t.anchor}">${t.label}</text>`).join('');
+    const nowLine = k.nowX != null ? `<line class="know" x1="${k.nowX.toFixed(1)}" x2="${k.nowX.toFixed(1)}" y1="${(k.plotTop - 8).toFixed(1)}" y2="${k.baseY.toFixed(1)}"></line>` : '';
     const selected = sel != null ? k.bars.find((b) => b.index === sel) : null;
     return `
-      <svg class="kchart" viewBox="0 0 ${k.CW} ${k.CH}" role="img" aria-label="Kitchen load: items cooking at once over the day">
-        ${grid}
-        ${bars}
-        <line class="kaxis" x1="${k.padLeft}" x2="${k.CW - k.padRight}" y1="${k.baseY.toFixed(1)}" y2="${k.baseY.toFixed(1)}"></line>
-        ${xTicks}
-        <text class="kcap" x="${(k.padLeft + (k.CW - k.padLeft - k.padRight) / 2).toFixed(1)}" y="${k.CH - 4}" text-anchor="middle">Time of day</text>
-      </svg>
+      <div class="kchart">
+        <svg class="kchart-axis" width="${k.axisW}" height="${k.CH}" aria-hidden="true">${yLabels}</svg>
+        <div class="kchart-scroll" data-scroll-key="${k.scrollKey}" data-open-scroll="${k.openScroll.toFixed(1)}">
+          <svg width="${k.plotWidth}" height="${k.CH}" role="img" aria-label="Kitchen load: items cooking at once from 12 AM to 11:59 PM">
+            ${grid}
+            ${bars}
+            ${nowLine}
+            <line class="kaxis" x1="0" x2="${k.plotRight}" y1="${k.baseY.toFixed(1)}" y2="${k.baseY.toFixed(1)}"></line>
+            ${xTicks}
+          </svg>
+        </div>
+      </div>
+      <div class="kchart-cap">Time of day${k.nowX != null ? ' · dashed line = now' : ''}</div>
       <div class="kreadout" aria-live="polite">${selected ? `<b>${selected.count} cooking</b> · ${selected.startLabel} – ${selected.endLabel}` : 'Tap a bar to see its time window.'}</div>`;
   }
 
@@ -2013,6 +2046,7 @@
       const s = saved[el.dataset.scrollKey];
       if (el.dataset.scrollKey === 'strip' && state.resetStripScroll) return;
       if (s) { el.scrollLeft = s[0]; el.scrollTop = s[1]; }
+      else if (el.dataset.openScroll) el.scrollLeft = parseFloat(el.dataset.openScroll); // kitchen chart: new date or width
     });
     state.resetStripScroll = false;
     if (!state.drawer) window.scrollTo(0, y);

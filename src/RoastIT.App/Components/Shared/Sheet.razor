@@ -7,7 +7,7 @@
     <div class="sheet full @(TopLayer ? "top-layer" : null)" role="dialog" aria-modal="true" aria-label="@Title">
         <div class="sheet-header">
             <button type="button" class="icon-btn" aria-label="@CloseLabel" @onclick="CloseAsync"><Icon Name="@IconName" /></button>
-            <span class="sheet-title">@Title</span>
+            <span class="sheet-title @TitleClass">@Title</span>
             @HeaderActions
         </div>
         <div class="sheet-body">@ChildContent</div>
@@ -29,6 +29,9 @@
     /// <summary>"close" (add/edit) or "back" (booking detail).</summary>
     [Parameter] public string IconName { get; set; } = "close";
     [Parameter] public string CloseLabel { get; set; } = "Close";
+
+    /// <summary>Extra class for the title, e.g. "mono" for a booking ID.</summary>
+    [Parameter] public string? TitleClass { get; set; }
 
     /// <summary>Opened over another sheet (z-index 60/61).</summary>
     [Parameter] public bool TopLayer { get; set; }

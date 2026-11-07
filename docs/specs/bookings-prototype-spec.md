@@ -623,7 +623,11 @@ business-time minute axis.
 - Each step from time t[i] to t[i+1] (the last step ends at the range
   end) is one bar with height = running total. Zero-width steps are
   dropped.
-- Range = earliest start … latest end.
+- Range (D31): the whole selected date, **12 AM to 11:59 PM** business
+  time (up to the next midnight), whatever the bars are. Bar parts outside
+  it, such as cooking that starts the evening before an early pickup or
+  runs past midnight, are cut off; the tooltip and readout keep the bar's
+  real start and end (*2 cooking · 10:00 PM – 1:00 AM*).
 
 ### 11.2 Card and empty state
 
@@ -635,12 +639,14 @@ business-time minute axis.
 
 | Part | Spec |
 |---|---|
-| Size | Width = min(screen, 760) − 62, at least 260; height 200. Padding left 30, right 8, top 18, bottom 40 |
-| Y axis | Gridlines (`--border`) with labels (mono 10.5 px muted, right-aligned at x = 24) from 0 to max, step 2 when max > 6 else 1 |
+| Size (D31) | Visible width = min(screen, 760) − 62, at least 260; height 184. A fixed 30 px y-axis column on the left; the rest is a sideways-scrolling plot 40 px per hour (960 px for the day) plus 8 px right padding. Padding top 18, bottom 24 |
+| Y axis | Labels (mono 10.5 px muted, right-aligned at x = 24) in the fixed column, so they stay visible while scrolling; gridlines (`--border`) across the plot. 0 to max, step 2 when max > 6 else 1 |
 | Bars | `--status-cooking` at 78% opacity, radius 2, 1 px gap. Selected bar: accent, 100% |
 | Bar labels | Count above the bar (mono 11 px / 600) when the bar is ≥ 18 px wide and count > 0 |
-| X axis | Baseline in `--fg-muted`. Ticks: 3 intervals under 420 px wide, else 5, as clock times; first tick left-anchored, last right-anchored, others centered, 16 px below the baseline |
-| Caption | *Time of day*, centered at the bottom (10.5 px) |
+| X axis (D31) | Baseline in `--fg-muted`. A tick (3 px mark + label) every hour, *12 AM* … *11 PM*; *12 AM* left-anchored, the rest centered, 16 px below the baseline |
+| Now line (D31) | Today only: a dashed accent line at the current time, not tappable |
+| Opening scroll (D31) | Today: centred on now. Other dates: one hour before the first bar with a count > 0. Clamped to the plot. Reset when the date or the screen width changes, kept when the data refreshes |
+| Caption | *Time of day* (plus *· dashed line = now* on today), centered under the chart (10.5 px) |
 | Hit areas | Each bar has a transparent full-height tap target, with a tooltip *2 cooking · 2:00 PM – 3:00 PM* |
 | Readout | Under the chart (12.5 px muted, `aria-live`): ***2 cooking** · 2:00 PM – 3:00 PM* for the selected bar, else *Tap a bar to see its time window.* |
 
@@ -821,6 +827,9 @@ business-time minute axis.
 - [ ] Breakdown shows only with a date.
 - [ ] Kitchen load shows only for today or later and handles late pending
       items.
+- [ ] Kitchen load always spans 12 AM – 11:59 PM with a label under every
+      hour; it scrolls sideways with the y-axis labels fixed; today opens
+      on the dashed now line, other dates near the first busy bar.
 - [ ] Changes made in the detail sheet update the Dashboard and list.
 
 **General**

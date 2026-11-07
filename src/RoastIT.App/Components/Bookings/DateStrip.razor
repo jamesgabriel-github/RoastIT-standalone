@@ -1,0 +1,68 @@
+@inject IJSRuntime JS
+
+@* The date bar (bookings spec §3): All chip, a 10-day strip with week arrows, and the calendar button. *@
+<div class="datebar">
+    <button type="button" class="all-chip @(Scope.SelectedDate is null ? "active" : null)" aria-pressed="@(Scope.SelectedDate is null ? "true" : "false")"
+            @onclick="() => Scope.SelectDate(null)">All</button>
+
+    <div class="strip no-scrollbar" @ref="_strip">
+        <button type="button" class="strip-arrow" aria-label="Previous week" disabled="@(!Scope.CanShiftStrip(-7))"
+                @onclick="() => Scope.ShiftStrip(-7)"><Icon Name="chevLeft" Size="16" /></button>
+
+        @for (var i = 0; i < BookingScopeState.StripDays; i++)
+        {
+            var day = Scope.StripStart.AddDays(i);
+            var selected = Scope.SelectedDate == day;
+            var count = Counts.GetValueOrDefault(day);
+            <button type="button" @key="day"
+                    class="day @(day == Scope.Today ? "today" : null) @(selected ? "selected" : null)"
+                    aria-pressed="@(selected ? "true" : "false")"
+                    aria-label="@DayLabel(day, count)"
+                    disabled="@(!Scope.IsSelectable(day))"
+                    @onclick="() => Scope.ToggleDate(day)">
+                <span class="day-wd">@day.ToString("ddd", System.Globalization.CultureInfo.InvariantCulture)</span>
+                <span class="day-num">@day.Day</span>
+                @if (count > 0)
+                {
+                    <span class="day-badge">@count</span>
+                }
+            </button>
+        }
+
+        <button type="button" class="strip-arrow" aria-label="Next week" disabled="@(!Scope.CanShiftStrip(7))"
+                @onclick="() => Scope.ShiftStrip(7)"><Icon Name="chevron" Size="16" /></button>
+    </div>
+
+    <button type="button" class="cal-btn @(Scope.SelectedDate is not null ? "has-date" : null)" aria-label="Pick a date"
+            @onclick="OnOpenCalendar"><Icon Name="calendar" Size="20" /></button>
+</div>
+
+@code {
+    private ElementReference _strip;
+    private DateOnly _lastStart;
+
+    [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
+
+    /// <summary>Bookings per pickup date (any status), for the badges.</summary>
+    [Parameter] public IReadOnlyDictionary<DateOnly, int> Counts { get; set; } = new Dictionary<DateOnly, int>();
+
+    [Parameter] public EventCallback OnOpenCalendar { get; set; }
+
+    private static string DayLabel(DateOnly day, int count) =>
+        count > 0 ? $"{BookingFormat.LongDate(day)}, {BookingFormat.BookingCount(count)}" : BookingFormat.LongDate(day);
+
+    protected override void OnInitialized() => _lastStart = Scope.StripStart;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // A date picked outside the strip moves it; the strip also scrolls back to its start (spec §3).
+        // Week arrows and taps inside the strip keep their scroll position.
+        if (Scope.StripStart == _lastStart) return;
+        var jumped = Math.Abs((Scope.StripStart.DayNumber - _lastStart.DayNumber)) != 7;
+        _lastStart = Scope.StripStart;
+        if (!jumped) return;
+        try { await JS.InvokeVoidAsync("roastit.scrollToStart", _strip); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+}

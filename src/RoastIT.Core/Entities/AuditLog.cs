@@ -39,4 +39,8 @@ public static class AuditActions
     public const string ProductCreated = "product.created";
     public const string ProductUpdated = "product.updated";
     public const string ProductActiveChanged = "product.active_changed";
+    public const string DiscountSet = "discount.set";
+    public const string PaymentRecorded = "payment.recorded";
+    public const string BalanceWaived = "order.balance_waived";
+    public const string OrderCancelled = "order.cancelled";
 }

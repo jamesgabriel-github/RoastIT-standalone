@@ -1,3 +1,4 @@
+using RoastIT.Core.Rules;
 using Microsoft.Extensions.Logging;
 
 namespace RoastIT.App.Services;
@@ -50,5 +51,19 @@ public sealed class PreferencesStore(IPreferences preferences, ILogger<Preferenc
     {
         get => ThemeModes.Parse(GetString(PreferenceKeys.Theme));
         set => SetString(PreferenceKeys.Theme, value.ToKey());
+    }
+
+    /// <summary>"detailed" (default) or "compact" (bookings spec §6.1).</summary>
+    public bool CompactBookingList
+    {
+        get => GetString(PreferenceKeys.BookingListView) == "compact";
+        set => SetString(PreferenceKeys.BookingListView, value ? "compact" : "detailed");
+    }
+
+    /// <summary>Which fields the booking cards show; all on when nothing is saved (Settings edits it in Phase 4).</summary>
+    public BookingColumns BookingColumns
+    {
+        get => BookingColumns.Parse(GetString(PreferenceKeys.BookingColumns));
+        set => SetString(PreferenceKeys.BookingColumns, value.ToJson());
     }
 }

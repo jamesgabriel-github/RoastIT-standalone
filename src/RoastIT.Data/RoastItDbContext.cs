@@ -14,6 +14,10 @@ public class RoastItDbContext(DbContextOptions<RoastItDbContext> options) : DbCo
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AppMeta> AppMeta => Set<AppMeta>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<Item> Items => Set<Item>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<DailyCounter> DailyCounters => Set<DailyCounter>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

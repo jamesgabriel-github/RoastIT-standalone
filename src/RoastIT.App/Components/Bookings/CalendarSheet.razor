@@ -1,0 +1,80 @@
+@* "Pick a date" bottom sheet over everything (bookings spec §4). *@
+<BottomSheet Open="Open" OnClose="OnClose" Title="Pick a date" TopLayer="true">
+    <div class="cal-head">
+        <button type="button" class="icon-btn" aria-label="Previous month" disabled="@(!Scope.CanShiftMonth(-1))"
+                @onclick="() => Scope.ShiftMonth(-1)"><Icon Name="chevLeft" Size="16" /></button>
+        <span class="cal-label">@BookingFormat.MonthYear(Scope.CalendarMonth)</span>
+        <button type="button" class="icon-btn" aria-label="Next month" disabled="@(!Scope.CanShiftMonth(1))"
+                @onclick="() => Scope.ShiftMonth(1)"><Icon Name="chevron" Size="16" /></button>
+    </div>
+
+    <div class="cal-grid">
+        @foreach (var weekday in _weekdays)
+        {
+            <span class="cal-wd">@weekday</span>
+        }
+        @for (var i = 0; i < LeadingBlanks; i++)
+        {
+            <span></span>
+        }
+        @for (var d = 1; d <= DaysInMonth; d++)
+        {
+            var day = new DateOnly(Scope.CalendarMonth.Year, Scope.CalendarMonth.Month, d);
+            var selected = Scope.SelectedDate == day;
+            <button type="button" class="cal-cell @(day == Scope.Today ? "today" : null) @(selected ? "selected" : null)"
+                    disabled="@(!Scope.IsSelectable(day))" aria-label="@BookingFormat.LongDate(day)"
+                    @onclick="() => PickAsync(day)">
+                @d
+                @if (Counts.GetValueOrDefault(day) > 0)
+                {
+                    <span class="cal-dot"></span>
+                }
+            </button>
+        }
+        @for (var i = 0; i < TrailingBlanks; i++)
+        {
+            <span></span>
+        }
+    </div>
+
+    <div class="inline-row">
+        <button type="button" class="btn" @onclick="TodayAsync">Today</button>
+        @if (Scope.SelectedDate is not null)
+        {
+            <button type="button" class="btn" @onclick="ClearAsync">Clear date</button>
+        }
+    </div>
+    <p class="caption" style="text-align:center;">Scheduling window: @BookingFormat.MediumDate(Scope.Min) – @BookingFormat.MediumDate(Scope.Max)</p>
+</BottomSheet>
+
+@code {
+    private static readonly string[] _weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
+    [Parameter] public IReadOnlyDictionary<DateOnly, int> Counts { get; set; } = new Dictionary<DateOnly, int>();
+
+    // Weeks start on Sunday; blank cells complete the first and last week.
+    private int DaysInMonth => DateTime.DaysInMonth(Scope.CalendarMonth.Year, Scope.CalendarMonth.Month);
+    private int LeadingBlanks => (int)Scope.CalendarMonth.DayOfWeek;
+    private int TrailingBlanks => (7 - (LeadingBlanks + DaysInMonth) % 7) % 7;
+
+    private async Task PickAsync(DateOnly day)
+    {
+        Scope.ToggleDate(day);
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task TodayAsync()
+    {
+        Scope.SelectToday();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        Scope.SelectDate(null);
+        await OnClose.InvokeAsync();
+    }
+}

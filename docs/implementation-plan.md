@@ -510,6 +510,12 @@ public static class OrderMath
   - **Chart:** add +1 at each start and −1 at each end, sort the times,
     and keep a running total. Each step between two times is one bar,
     and its height is how many items are cooking then.
+  - **Axis (D31):** fixed to the whole selected date, **12 AM to 11:59
+    PM** in business time, one labelled tick per hour (12 AM … 11 PM).
+    It's wider than the screen, so it scrolls sideways while the y-axis
+    labels stay put. Bar parts outside the day are cut off; tapping a bar
+    still shows its real times. Today shows a "now" line and opens on it;
+    other dates open near the first busy bar.
   - **Labels:** in business time. Tapping a bar shows "{n} cooking ·
     {start} – {end}".
   - **Empty:** "No pending or cooking items scheduled for this date."
@@ -1222,6 +1228,14 @@ The output is `com.roastit.app-Signed.apk` under
 | Q18 | Menu: **sort ties** (menu spec §10.7) | **Implemented the spec's suggestion:** ties on price or cooking time sort by name A → Z; identical names by oldest first | 2026-11-07 |
 | Q19 | Menu: editing a product without changing anything, then confirming the PIN | **Implemented: nothing is written, audited or announced**; the toast still says "Saved {name}". The PIN is still consumed. Likewise deactivating an already inactive product is a no-op | 2026-11-07 |
 | Q20 | Menu: audit row when an edit also flips the "Available for booking" switch | **Implemented: one `product.updated` row** whose details list every changed field, including `active` before/after (no extra `product.active_changed` row, since it is one save with one PIN). Card Activate/Deactivate writes `product.active_changed` | 2026-11-07 |
+| Q21 | Bookings: **money actions on a fully cancelled order** (bookings spec §14.1) | **Implemented the spec's suggestion.** `SetDiscountAsync`, `RecordPaymentAsync` and `WriteOffBalanceAsync` refuse ("This order is cancelled."); the detail sheet hides *+ Apply discount*, Edit/Remove, *+ Record payment* and the write-off banner, and shows Balance due ₱0 (`BookingRow.BalanceDue`); the list card's money line reads *Cancelled · ₱0* | 2026-11-07 |
+| Q22 | Bookings: **overpayment** (bookings spec §14.2) | **Implemented: allowed.** The payment editor has no upper limit and `amount_paid` can exceed the net total; Balance floors at ₱0. Alternative: cap at the balance, or warn | 2026-11-07 |
+| Q23 | Bookings: **"Amount paid now" on New booking** (bookings spec §14.3) | **Implemented the plan: clamped to ≥ 0 only**, not capped at the net total (same as Q22) | 2026-11-07 |
+| Q24 | Bookings: **pickup validation** (bookings spec §14.4) | **Implemented: required** (blank shows "Choose a pickup date and time."), **default now + 5 hours** in business time (the prototype used tomorrow 10:00; changed at the owner's request), **past pickups allowed**, and `CreateAsync` **enforces today ± 6 months** ("Pickup must be within 6 months of today.") whatever the picker allows | 2026-11-07 |
+| Q25 | Bookings: **"Latest first" in the grouped view** (bookings spec §14.5) | **Implemented as the spec describes:** the day groups reverse, bookings inside a day stay earliest-first. Alternative: reverse both | 2026-11-07 |
+| Q26 | Bookings: **sort ties** (bookings spec §14.6) | **Implemented: booking ID A → Z is the secondary key for every sort** (always ascending, even when the main sort is descending). Dashboard product-mix ties sort by product name A → Z (the catalog has no manual order) | 2026-11-07 |
+| Q27 | Bookings: **notes and input limits** (bookings spec §14.7) | **Notes: no field and no row in Phase 3** (the `orders.notes` column exists, stays empty, and the Phase 4 CSV can include it). **Limits, my addition:** customer ≤ 80, phone ≤ 30, **at most 100 bookings (units) in one order**, each with its own message in `BookingMessages`, so a mistyped quantity can't create thousands of rows | 2026-11-07 |
+| Q28 | Bookings: **audit rows for the discount and payment entered while creating a booking** | **Implemented: `discount.set` and `payment.recorded` rows (with `atCreation: true`)** are written in the create transaction, so every payment has a log row. Creating the booking itself writes no audit row. Setting a discount to the value it already has writes nothing | 2026-11-07 |
 
 ### 15.2 Decision log
 
@@ -1257,6 +1271,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D28 | ~~**No CSV regeneration after an import.** Files catch up as the imported bookings change (each date on its next change, today at the next hourly save) *(was Q7)*~~ — **replaced by D29** | 2026-11-04 | — |
 | D29 | **One CSV file, bookings within 48 hours.** `roastline-bookings-48h.csv` holds every booking with pickup from 24 h before to 24 h after the save, overwritten **hourly only, while the app is open** (no save after individual changes, none after import). No per-date files *(replaces D26 and D28)* | 2026-11-04 | §10.6 |
 | D30 | **CSV backup is Android only for now**, saved to `Documents/Roastline/` through MediaStore *(was Q5)* | 2026-11-04 | §10.6 |
+| D31 | **Kitchen load chart uses a fixed day axis.** It always spans the whole selected date, 12 AM to 11:59 PM (business time), with an hourly tick (12 AM … 11 PM) every 40 px, so it is wider than the phone and **scrolls sideways**; the y-axis labels stay pinned. Bar parts outside the day are cut off, but their tooltips keep the real times. Today shows a dashed "now" line and opens centred on it; other dates open an hour before the first busy bar. Which items count is unchanged (Pending and Cooking only, late pending from now). *Replaces the old "earliest start … latest end" range with 3 or 5 ticks; the bookings prototype and spec §11 are updated to match* | 2026-11-07 | §7.6, bookings spec §11 |
 
 ---
 

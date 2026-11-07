@@ -1,0 +1,120 @@
+@inject IBusinessCalendar Calendar
+
+@* The Dashboard tab (bookings spec §10). Shows whatever DashboardService returned for the current scope. *@
+<section class="kpi-grid">
+    <div class="kpi"><span class="kpi-label">Total bookings</span><span class="kpi-value">@Data.TotalBookings</span></div>
+    <div class="kpi"><span class="kpi-label">Total revenue</span><span class="kpi-value">@Money.Format(Data.Revenue)</span></div>
+    <div class="kpi"><span class="kpi-label">Collected</span><span class="kpi-value">@Money.Format(Data.Collected)</span></div>
+    <div class="kpi"><span class="kpi-label">Balance due</span><span class="kpi-value">@Money.Format(Data.BalanceDue)</span></div>
+    <div class="kpi"><span class="kpi-label">Avg. order value</span><span class="kpi-value">@Money.Format(Data.AverageOrderValue)</span></div>
+</section>
+
+@if (Data.StatusBreakdown is { } slices)
+{
+    <section class="card">
+        <div class="card-head">
+            <h2 class="card-title">Status breakdown</h2>
+            <span class="card-cap">@BookingFormat.BookingCount(Data.TotalBookings)</span>
+        </div>
+        @if (Data.TotalBookings > 0)
+        {
+            <div class="stack-bar">
+                @foreach (var slice in slices)
+                {
+                    <span style="width:@(Pct(slice.Count, Data.TotalBookings))%; background:var(--status-@(Key(slice.Status)));"></span>
+                }
+            </div>
+            <div class="legend">
+                @foreach (var slice in slices)
+                {
+                    <span class="legend-item">
+                        <span class="pill-dot" style="background:var(--status-@(Key(slice.Status))); width:8px; height:8px;"></span>@ItemStatusRules.Label(slice.Status) <b class="mono">@slice.Count</b>
+                    </span>
+                }
+            </div>
+        }
+        else
+        {
+            <EmptyState>No bookings on this date.</EmptyState>
+        }
+    </section>
+}
+
+@if (Data.KitchenLoad is { } bars)
+{
+    <section class="card">
+        <div class="card-head">
+            <h2 class="card-title">Kitchen load</h2>
+            <span class="card-cap">Items cooking (count)</span>
+        </div>
+        @if (bars.Count > 0)
+        {
+            <KitchenLoadChart Bars="bars" Date="Date" />
+        }
+        else
+        {
+            <EmptyState>No pending or cooking items scheduled for this date.</EmptyState>
+        }
+    </section>
+}
+
+<section class="card">
+    <div class="card-head"><h2 class="card-title">Product mix</h2></div>
+    @if (Data.ProductMix.Count > 0)
+    {
+        var top = Data.ProductMix.Max(p => p.Count);
+        <div class="mix-list">
+            @foreach (var product in Data.ProductMix)
+            {
+                <div class="mix-row">
+                    <span>@product.Name</span>
+                    <b class="mono">@product.Count</b>
+                    <div class="mix-bar"><span style="width:@(Pct(product.Count, top))%;"></span></div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <EmptyState>No bookings in this view.</EmptyState>
+    }
+</section>
+
+<section class="card">
+    <div class="card-head"><h2 class="card-title">Balance due</h2></div>
+    @if (Data.BalanceDueTop.Count > 0)
+    {
+        <div>
+            @foreach (var row in Data.BalanceDueTop)
+            {
+                <div class="bal-row">
+                    <div style="min-width:0;">
+                        <div class="bal-name">@row.CustomerLabel</div>
+                        <div class="card-cap">@BookingFormat.DateTimeShort(Calendar.ToLocal(row.PickupAt))</div>
+                    </div>
+                    <b class="mono" style="color:var(--status-cooking); white-space:nowrap;">@Money.Format(row.Balance)</b>
+                </div>
+            }
+            @if (Data.BalanceDueMore > 0)
+            {
+                <div class="card-cap" style="padding-top:8px;">+@Data.BalanceDueMore more</div>
+            }
+        </div>
+    }
+    else
+    {
+        <EmptyState>Everyone's paid up in this view.</EmptyState>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public DashboardData Data { get; set; } = default!;
+
+    /// <summary>The selected date (null = all dates).</summary>
+    [Parameter] public DateOnly? Date { get; set; }
+
+    private static string Key(ItemStatus status) => status.ToString().ToLowerInvariant();
+
+    private static string Pct(int part, int whole) =>
+        (whole <= 0 ? 0 : part * 100.0 / whole).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

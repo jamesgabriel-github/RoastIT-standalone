@@ -1,0 +1,38 @@
+@* "Sort bookings" bottom sheet over everything (bookings spec §6.4). Picking a field or direction applies at once; Done closes. *@
+<BottomSheet Open="Open" OnClose="OnClose" Title="Sort bookings" TopLayer="true">
+    <div>
+        @foreach (var field in _fields)
+        {
+            var selected = field == Field;
+            <button type="button" class="menu-row @(selected ? "selected" : null)" @onclick="() => FieldChanged.InvokeAsync(field)">
+                @BookingListing.FieldLabel(field)
+                <span class="trail">@if (selected) { <Icon Name="check" Size="18" /> }</span>
+            </button>
+        }
+    </div>
+    <Segmented TValue="SortDirection" AriaLabel="Direction" Options="DirectionOptions" Value="Direction" ValueChanged="DirectionChanged" />
+    <p class="caption">Bookings are grouped by date only when showing all dates sorted by pickup time.</p>
+    <button type="button" class="btn btn-primary" @onclick="OnClose">Done</button>
+</BottomSheet>
+
+@code {
+    private static readonly BookingSortField[] _fields =
+    [
+        BookingSortField.Pickup, BookingSortField.Status, BookingSortField.BookingId,
+        BookingSortField.Customer, BookingSortField.Product, BookingSortField.CookingTime,
+    ];
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public BookingSortField Field { get; set; }
+    [Parameter] public EventCallback<BookingSortField> FieldChanged { get; set; }
+    [Parameter] public SortDirection Direction { get; set; }
+    [Parameter] public EventCallback<SortDirection> DirectionChanged { get; set; }
+
+    // The direction labels follow the chosen field (Soonest first / Pending → Completed / A → Z ...).
+    private IReadOnlyList<SegmentedOption<SortDirection>> DirectionOptions =>
+    [
+        new(SortDirection.Asc, BookingListing.DirectionLabel(Field, SortDirection.Asc)),
+        new(SortDirection.Desc, BookingListing.DirectionLabel(Field, SortDirection.Desc)),
+    ];
+}

@@ -1,0 +1,29 @@
+@* One booking as a compact row: ID and pickup time only. Tapping expands it into the full card (bookings spec §7.2). *@
+<button type="button" class="crow" aria-expanded="false" aria-label="@AriaLabel" @onclick="() => OnExpand.InvokeAsync(Row)">
+    <span class="bid">@(Row.BookingId)@if (Row.OrderTag is { } tag) {<span class="order-tag" aria-hidden="true">@tag</span>}</span>
+    <span class="crow-time"><Icon Name="clock" Size="15" />@TimeText</span>
+    <span class="crow-chev"><Icon Name="chevDown" Size="16" /></span>
+</button>
+
+@code {
+    [Inject] private IBusinessCalendar Calendar { get; set; } = default!;
+
+    [Parameter, EditorRequired] public BookingRow Row { get; set; } = default!;
+
+    /// <summary>True when the day is already clear (grouped view or a date is selected): show the time alone.</summary>
+    [Parameter] public bool TimeAlone { get; set; }
+
+    [Parameter] public EventCallback<BookingRow> OnExpand { get; set; }
+
+    private string TimeText
+    {
+        get
+        {
+            var local = Calendar.ToLocal(Row.PickupAt);
+            return TimeAlone ? BookingFormat.Time(local) : BookingFormat.DateTimeShort(local);
+        }
+    }
+
+    private string AriaLabel =>
+        $"Booking {Row.BookingId}{(Row.OrderCount > 1 ? $", {Row.OrderPosition} of {Row.OrderCount} in this order" : "")}, pickup {TimeText}. Show details";
+}

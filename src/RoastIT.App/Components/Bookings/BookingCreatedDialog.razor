@@ -1,0 +1,53 @@
+@inherits LayerComponentBase
+@inject IBusinessCalendar Calendar
+@inject IJSRuntime JS
+
+@* "Booking created" dialog (bookings spec §9.1). Stays open until Done or Back: no timer, and the backdrop does nothing. *@
+@if (Open && Created is { } c)
+{
+    var n = c.Units.Count;
+    <div class="dialog-backdrop"></div>
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="created-title" aria-describedby="created-ids">
+        <div class="created-head">
+            <span class="created-icon"><Icon Name="check" Size="22" /></span>
+            <h2 id="created-title">@(n == 1 ? "Booking created" : $"{n} bookings created")</h2>
+            <p class="created-meta">@c.CustomerLabel · Pickup @BookingFormat.DateTimeShort(Calendar.ToLocal(c.PickupAtUtc))</p>
+        </div>
+        <div class="created-ids" id="created-ids" aria-label="@(n == 1 ? "Booking ID" : "Booking IDs")">
+            @if (n == 1)
+            {
+                <div class="created-id single"><span class="mono">@c.Units[0].BookingId</span><span class="prod">@c.Units[0].ProductName</span></div>
+            }
+            else
+            {
+                foreach (var unit in c.Units)
+                {
+                    <div class="created-id"><span class="mono">@unit.BookingId</span><span class="prod">@unit.ProductName</span></div>
+                }
+            }
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-primary" @ref="_done" @onclick="CloseAsync">Done</button>
+        </div>
+    </div>
+}
+
+@code {
+    private ElementReference _done;
+    private bool _focused;
+
+    protected override LayerKind Kind => LayerKind.Dialog;
+
+    [Parameter] public CreatedBooking? Created { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Done gets focus when the dialog opens, so Enter closes it on a keyboard.
+        if (!Open) { _focused = false; return; }
+        if (_focused || Created is null) return;
+        _focused = true;
+        try { await JS.InvokeVoidAsync("roastit.focusSelect", _done); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+}

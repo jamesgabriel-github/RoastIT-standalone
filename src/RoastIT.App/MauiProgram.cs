@@ -32,6 +32,14 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAppBackgrounder, AppBackgrounder>();
 		builder.Services.AddSingleton<PinPromptService>();
 
+		// Bookings (Phase 3). Business time is always Asia/Manila, whatever the device's time zone is.
+		builder.Services.AddSingleton<IBusinessCalendar>(sp => new BusinessCalendar(sp.GetRequiredService<IClock>()));
+		builder.Services.AddSingleton<IBookingStore, EfBookingStore>();
+		builder.Services.AddSingleton<BookingScopeState>();
+		builder.Services.AddScoped<BookingService>();
+		builder.Services.AddScoped<OrderService>();
+		builder.Services.AddScoped<DashboardService>();
+
 		// Menu catalog (Phase 2). The notifier is a singleton so every open screen hears the same events.
 		builder.Services.AddSingleton<IChangeNotifier, ChangeNotifier>();
 		builder.Services.AddSingleton<IProductStore, EfProductStore>();

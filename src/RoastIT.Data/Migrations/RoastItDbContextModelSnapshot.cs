@@ -110,6 +110,134 @@ namespace RoastIT.Data.Migrations
                     b.ToTable("audit_logs", (string)null);
                 });
 
+            modelBuilder.Entity("RoastIT.Core.Entities.DailyCounter", b =>
+                {
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("date");
+
+                    b.Property<int>("LastSeq")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("last_seq");
+
+                    b.HasKey("Date");
+
+                    b.ToTable("daily_counters", (string)null);
+                });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Item", b =>
+                {
+                    b.Property<string>("BookingId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("booking_id");
+
+                    b.Property<Guid>("OrderKey")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("order_key");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("product_id");
+
+                    b.Property<DateTime?>("StartedCookingAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("started_cooking_at");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("status");
+
+                    b.HasKey("BookingId");
+
+                    b.HasIndex("OrderKey");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("items", (string)null);
+                });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Order", b =>
+                {
+                    b.Property<Guid>("Key")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("key");
+
+                    b.Property<long>("AmountPaid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("amount_paid");
+
+                    b.Property<string>("Customer")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("customer");
+
+                    b.Property<long>("DiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("discount_amount");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("notes");
+
+                    b.Property<DateOnly>("OrderDate")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("order_date");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("phone");
+
+                    b.Property<DateTime>("PickupAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("pickup_at");
+
+                    b.Property<long>("TotalAmount")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("total_amount");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("orders", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_orders_discount", "discount_amount >= 0 AND discount_amount <= total_amount");
+
+                            t.HasCheckConstraint("ck_orders_paid", "amount_paid >= 0");
+
+                            t.HasCheckConstraint("ck_orders_total", "total_amount >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("OrderKey")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("order_key");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("recorded_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderKey");
+
+                    b.ToTable("payments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payments_amount", "amount > 0");
+                        });
+                });
+
             modelBuilder.Entity("RoastIT.Core.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -151,6 +279,41 @@ namespace RoastIT.Data.Migrations
 
                             t.HasCheckConstraint("ck_products_price", "price >= 0");
                         });
+                });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Item", b =>
+                {
+                    b.HasOne("RoastIT.Core.Entities.Order", "Order")
+                        .WithMany("Items")
+                        .HasForeignKey("OrderKey")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RoastIT.Core.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Payment", b =>
+                {
+                    b.HasOne("RoastIT.Core.Entities.Order", null)
+                        .WithMany("Payments")
+                        .HasForeignKey("OrderKey")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RoastIT.Core.Entities.Order", b =>
+                {
+                    b.Navigation("Items");
+
+                    b.Navigation("Payments");
                 });
 #pragma warning restore 612, 618
         }

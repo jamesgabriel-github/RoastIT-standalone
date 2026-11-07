@@ -68,7 +68,37 @@ window.roastit = (function () {
         }, 300);
     });
 
+    // Kitchen chart: drawn at the real screen width, redrawn when the width (not the height) changes.
+    // The height changes when the on-screen keyboard opens, which must not redraw it.
+    var widthRef = null;
+    var lastWidth = window.innerWidth;
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+        if (!widthRef || window.innerWidth === lastWidth) return;
+        lastWidth = window.innerWidth;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+            if (widthRef) widthRef.invokeMethodAsync('OnScreenWidth', window.innerWidth).catch(function () { });
+        }, 120);
+    });
+    function watchWidth(dotnetRef) { widthRef = dotnetRef; lastWidth = window.innerWidth; return lastWidth; }
+    function unwatchWidth() { widthRef = null; }
+
+    // The date strip returns to its start when a date outside it is picked.
+    function scrollToStart(el) { if (el) el.scrollLeft = 0; }
+
+    // The kitchen chart opens scrolled to now (today) or to its first busy hour.
+    function scrollLeftTo(el, x) { if (el) el.scrollLeft = x; }
+
+    // Focuses an input and selects its text (the discount and payment editors).
+    function focusSelect(el) { if (!el) return; el.focus(); if (el.select) el.select(); }
+
     return {
+        focusSelect: focusSelect,
+        watchWidth: watchWidth,
+        unwatchWidth: unwatchWidth,
+        scrollToStart: scrollToStart,
+        scrollLeftTo: scrollLeftTo,
         applyTheme: applyTheme,
         setScrollLock: setScrollLock,
         registerEscape: registerEscape,

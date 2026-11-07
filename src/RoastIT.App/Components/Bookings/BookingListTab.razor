@@ -1,0 +1,137 @@
+@inject IBusinessCalendar Calendar
+@inject PreferencesStore Preferences
+
+@* The Booking list tab (bookings spec §6, §7): search, status chips, view switch, sort, grouped or flat results. *@
+<label class="search">
+    <span class="sr-only">Search bookings</span>
+    <Icon Name="search" Size="16" />
+    <input class="input" type="search" enterkeyhint="search" placeholder="Search ID, product, or customer" autocomplete="off"
+           @bind="Search" @bind:event="oninput" />
+</label>
+
+<FilterChips AriaLabel="Filter by status" Items="Chips" Selected="StatusKey" SelectedChanged="OnStatusChanged" />
+
+<div class="list-meta">
+    <span class="muted">@BookingFormat.BookingCount(_count)</span>
+    <div class="list-meta-actions">
+        <div class="view-toggle" role="radiogroup" aria-label="List view">
+            <button type="button" role="radio" class="@(!_compact ? "active" : null)" aria-checked="@(!_compact ? "true" : "false")"
+                    aria-label="Detailed cards" title="Detailed cards" @onclick="() => SetCompact(false)"><Icon Name="viewCards" Size="16" /></button>
+            <button type="button" role="radio" class="@(_compact ? "active" : null)" aria-checked="@(_compact ? "true" : "false")"
+                    aria-label="Compact list" title="Compact list" @onclick="() => SetCompact(true)"><Icon Name="viewCompact" Size="16" /></button>
+        </div>
+        <button type="button" class="meta-btn" @onclick="OnOpenSort">
+            <Icon Name="@(Scope.SortDirection == SortDirection.Asc ? "sortAsc" : "sortDesc")" Size="14" />
+            <span>@BookingListing.FieldLabel(Scope.SortField)</span>
+        </button>
+    </div>
+</div>
+
+@if (_count == 0)
+{
+    <EmptyState>@BookingListing.EmptyMessage(Scope.SelectedDate)</EmptyState>
+}
+else
+{
+    <div class="bcard-list @(_compact ? "compact" : null)">
+        @foreach (var group in _groups)
+        {
+            if (group.Date is { } date)
+            {
+                <div class="group-head">
+                    <span>@BookingFormat.LongDate(date)@if (date == Scope.Today) {<span class="today-pill">Today</span>}</span>
+                    <span class="muted">@BookingFormat.BookingCount(group.Rows.Count)</span>
+                </div>
+            }
+            foreach (var row in group.Rows)
+            {
+                if (_compact && !_expanded.Contains(row.BookingId))
+                {
+                    <CompactRow @key="row.BookingId" Row="row" TimeAlone="_timeAlone" OnExpand="Expand" />
+                }
+                else
+                {
+                    <BookingCard @key="row.BookingId" Row="row" Columns="_columns" Expanded="_compact"
+                                 OnOpen="OnOpen" OnAdvance="OnAdvance" OnCollapse="Collapse" />
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    private List<BookingGroup> _groups = [];
+    private int _count;
+    private bool _compact, _timeAlone;
+    private BookingColumns _columns = BookingColumns.All;
+    private readonly HashSet<string> _expanded = [];
+
+    [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
+
+    /// <summary>Every booking, with order info filled in. Filtering happens here.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<BookingRow> Rows { get; set; } = [];
+
+    [Parameter] public EventCallback<BookingRow> OnOpen { get; set; }
+    [Parameter] public EventCallback<BookingRow> OnAdvance { get; set; }
+    [Parameter] public EventCallback OnOpenSort { get; set; }
+
+    private string Search
+    {
+        get => Scope.Search;
+        set { Scope.SetSearch(value); Refilter(); }
+    }
+
+    private string StatusKey => Scope.StatusFilter?.ToString().ToLowerInvariant() ?? "all";
+
+    // Counts are global: they ignore the date and the search (bookings spec §6.1).
+    private IReadOnlyList<ChipItem> Chips
+    {
+        get
+        {
+            var c = BookingListing.Counts(Rows.ToList());
+            return
+            [
+                new("all", $"All · {c.All}"),
+                new("pending", $"Pending · {c.Pending}"),
+                new("cooking", $"Cooking · {c.Cooking}"),
+                new("cooked", $"Cooked · {c.Cooked}"),
+                new("completed", $"Completed · {c.Completed}"),
+                new("cancelled", $"Cancelled · {c.Cancelled}"),
+            ];
+        }
+    }
+
+    protected override void OnInitialized() => _compact = Preferences.CompactBookingList;
+
+    protected override void OnParametersSet()
+    {
+        _columns = Preferences.BookingColumns;
+        Refilter();
+    }
+
+    private void Refilter()
+    {
+        var options = Scope.ListOptions;
+        _groups = BookingListing.Apply(Rows, options, Calendar);
+        _count = BookingListing.ResultCount(_groups);
+        _timeAlone = BookingListing.IsGrouped(options) || options.Date is not null;
+    }
+
+    private void OnStatusChanged(string key)
+    {
+        Scope.SetStatusFilter(key == "all" ? null : Enum.Parse<ItemStatus>(key, ignoreCase: true));
+        Refilter();
+    }
+
+    private void SetCompact(bool compact)
+    {
+        if (_compact == compact) return;
+        _compact = compact;
+        _expanded.Clear(); // switching the view collapses everything (bookings spec §2)
+        Preferences.CompactBookingList = compact;
+    }
+
+    private void Expand(BookingRow row) => _expanded.Add(row.BookingId);
+
+    private void Collapse(BookingRow row) => _expanded.Remove(row.BookingId);
+}

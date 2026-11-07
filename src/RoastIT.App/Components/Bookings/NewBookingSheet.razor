@@ -1,0 +1,246 @@
+@inject BookingService Bookings
+@inject ProductService Products
+@inject IBusinessCalendar Calendar
+@inject IClock Clock
+
+@* New booking full sheet (bookings spec §9). No PIN. The service recomputes the total from the catalog; the totals here are only a preview. *@
+<Sheet Open="Open" OnClose="OnClose" Title="New booking">
+    <ChildContent>
+        <form id="new-booking-form" class="form-stack" novalidate @onsubmit="SubmitAsync">
+            <label class="field">
+                <span class="field-label">Customer name <span class="opt">(optional)</span></span>
+                <input class="input" type="text" placeholder="Leave blank for a walk-in" autocomplete="off" enterkeyhint="next"
+                       maxlength="@BookingLimits.CustomerMax" @bind="_customer" @bind:event="oninput" />
+            </label>
+            <label class="field">
+                <span class="field-label">Phone <span class="opt">(optional)</span></span>
+                <input class="input" type="tel" inputmode="tel" placeholder="0917 000 0000" autocomplete="off"
+                       maxlength="@BookingLimits.PhoneMax" @bind="_phone" @bind:event="oninput" />
+            </label>
+            <label class="field">
+                <span class="field-label">Pickup date &amp; time</span>
+                <input class="input" type="datetime-local" min="@MinPickup" max="@MaxPickup" value="@_pickup" @oninput="e => _pickup = e.Value?.ToString() ?? string.Empty" />
+            </label>
+
+            <p class="group-label" style="margin-top:4px;">Items</p>
+
+            @if (_products.Count == 0)
+            {
+                <EmptyState>@(_loaded ? "No products are available for booking. Add or activate one in Menu first." : "Loading the menu…")</EmptyState>
+            }
+            else
+            {
+                @for (var i = 0; i < _lines.Count; i++)
+                {
+                    var index = i;
+                    var line = _lines[i];
+                    <div class="line-card" @key="line">
+                        <div class="line-head">
+                            <span class="group-label">Item @(index + 1)</span>
+                            <button type="button" class="text-btn" @onclick="() => RemoveLine(index)">@(_lines.Count > 1 ? "Remove" : "Reset")</button>
+                        </div>
+                        <div class="prod-scroll no-scrollbar" role="radiogroup" aria-label="Product">
+                            @foreach (var product in _products)
+                            {
+                                var selected = product.Id == line.ProductId;
+                                <button type="button" class="prod-card @(selected ? "selected" : null)" role="radio" aria-checked="@(selected ? "true" : "false")"
+                                        @key="product.Id" @onclick="() => line.ProductId = product.Id">
+                                    <span class="prod-name">@product.Name</span>
+                                    <span class="prod-meta">@DurationFormat.Format(product.CookingTimeMin)</span>
+                                    <span class="prod-price">@Money.Format(product.Price)</span>
+                                </button>
+                            }
+                        </div>
+                        <div class="line-foot">
+                            <div class="stepper">
+                                <button type="button" aria-label="Fewer" @onclick="() => Step(line, -1)">−</button>
+                                <input type="number" inputmode="numeric" min="1" step="1" aria-label="Quantity" @bind="line.Qty" @bind:event="oninput" />
+                                <button type="button" aria-label="More" @onclick="() => Step(line, 1)">+</button>
+                            </div>
+                            <div class="subtotal">
+                                <span class="caption">Subtotal</span>
+                                <span class="mono">@Money.Format(Subtotal(line))</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                <button type="button" class="btn btn-dashed" @onclick="AddLine"><Icon Name="plus" Size="16" /> Add another item</button>
+            }
+
+            <div class="sum-card">
+                <div class="sum-row"><span>Order total</span><span class="mono">@Money.Format(Total)</span></div>
+                <label class="field">
+                    <span class="field-label">Discount <span class="opt">(optional)</span></span>
+                    <span class="money-input">
+                        <span class="prefix">₱</span>
+                        <input class="input" type="number" inputmode="decimal" min="0" placeholder="0" @bind="_discount" @bind:event="oninput" />
+                    </span>
+                </label>
+                @if (Discount > 0)
+                {
+                    <div class="sum-row big"><span>Net total</span><span class="mono">@Money.Format(Net)</span></div>
+                }
+                <label class="field">
+                    <span class="field-label">Amount paid now <span class="opt">(optional)</span></span>
+                    <span class="money-input">
+                        <span class="prefix">₱</span>
+                        <input class="input" type="number" inputmode="decimal" min="0" placeholder="0" @bind="_paid" @bind:event="oninput" />
+                    </span>
+                </label>
+            </div>
+
+            @if (_error.Length > 0)
+            {
+                <p class="form-error" role="alert">@_error</p>
+            }
+        </form>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn auto" @onclick="OnClose">Cancel</button>
+        <button type="submit" form="new-booking-form" class="btn btn-primary" disabled="@(_busy || _products.Count == 0)">Create booking · @Money.Format(Net)</button>
+    </Footer>
+</Sheet>
+
+@code {
+    private sealed class Line
+    {
+        public Guid ProductId { get; set; }
+        public string Qty { get; set; } = "1";
+    }
+
+    private string _customer = "", _phone = "", _pickup = "", _discount = "", _paid = "", _error = "";
+    private readonly List<Line> _lines = [];
+    private IReadOnlyList<Product> _products = [];
+    private bool _busy, _wasOpen, _loaded;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The bounds of the schedulable window (today ± 6 months).</summary>
+    [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
+
+    /// <summary>Raised after a successful create (the sheet has already closed itself).</summary>
+    [Parameter] public EventCallback<CreatedBooking> OnCreated { get; set; }
+
+    private string MinPickup => $"{Scope.Min:yyyy-MM-dd}T00:00";
+    private string MaxPickup => $"{Scope.Max:yyyy-MM-dd}T23:59";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Each time the sheet opens the form starts fresh (spec §9).
+        if (Open && !_wasOpen)
+        {
+            _wasOpen = true;
+            ResetForm();
+            await LoadProductsAsync();
+        }
+        else if (!Open)
+        {
+            _wasOpen = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        _customer = _phone = _discount = _paid = _error = "";
+        // Default pickup: now + 5 hours, in business time (Q24).
+        _pickup = BookingDefaults.PickupLocal(Clock.UtcNow, Calendar).ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        _lines.Clear();
+        _busy = false;
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        try
+        {
+            // Only active products are offered; the service still rejects an inactive one.
+            _products = (await Products.ListAsync())
+                .Where(p => p.Active)
+                .OrderBy(p => p.CreatedAt).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _loaded = true;
+            if (_products.Count > 0) _lines.Add(NewLine());
+        }
+        catch (AccessDeniedException) { }
+    }
+
+    private Line NewLine() => new() { ProductId = _products[0].Id, Qty = "1" };
+
+    private void AddLine()
+    {
+        if (_products.Count > 0) _lines.Add(NewLine());
+    }
+
+    private void RemoveLine(int index)
+    {
+        if (_lines.Count > 1) _lines.RemoveAt(index);
+        else if (_products.Count > 0) _lines[0] = NewLine(); // Reset: first product × 1
+    }
+
+    // ---- Quantities and totals (a preview; the service recomputes) --------------------
+
+    /// <summary>The typed quantity rounded to a whole number, at least 0 when it can't be read.</summary>
+    private static int QtyOf(Line line) =>
+        double.TryParse(line.Qty, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var q) && q is >= 0 and < 100000
+            ? (int)Math.Round(q, MidpointRounding.AwayFromZero)
+            : 0;
+
+    private void Step(Line line, int delta) => line.Qty = Math.Max(1, QtyOf(line) + delta).ToString();
+
+    private long Subtotal(Line line)
+    {
+        var product = _products.FirstOrDefault(p => p.Id == line.ProductId);
+        var qty = QtyOf(line);
+        return product is null || qty < 1 ? 0 : product.Price * qty;
+    }
+
+    private long Total => _lines.Sum(Subtotal);
+
+    private static long Pesos(string text) => Money.TryParsePesos(text, out var c) ? c : 0;
+
+    private long Discount => OrderMath.Clamp(Pesos(_discount), Total);
+
+    private long Net => OrderMath.NetTotal(Total, Discount);
+
+    // ---- Create ------------------------------------------------------------------
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+
+        var lines = _lines.Where(l => QtyOf(l) >= 1).Select(l => new NewBookingLine(l.ProductId, QtyOf(l))).ToList();
+        if (lines.Count == 0) return; // nothing to book: nothing happens
+
+        if (!DateTime.TryParse(_pickup, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var local))
+        {
+            _error = "Choose a pickup date and time.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var created = await Bookings.CreateAsync(new NewBookingInput(
+                _customer, _phone, Calendar.ToUtc(local), lines, Pesos(_discount), Pesos(_paid)));
+
+            _error = "";
+            await OnClose.InvokeAsync();
+            await OnCreated.InvokeAsync(created);
+        }
+        catch (ValidationException ex) { _error = ex.Message; }
+        catch (StaleStateException ex) { _error = ex.Message; await LoadProductsAfterStaleAsync(); }
+        catch (AccessDeniedException) { /* the app locked: the lock screen takes over */ }
+        finally { _busy = false; }
+    }
+
+    // A product vanished or changed under the form: reload the menu and keep the rest of the form.
+    private async Task LoadProductsAfterStaleAsync()
+    {
+        var keep = _lines.ToList();
+        _lines.Clear();
+        await LoadProductsAsync();
+        _lines.Clear();
+        _lines.AddRange(keep.Where(l => _products.Any(p => p.Id == l.ProductId)));
+        if (_lines.Count == 0 && _products.Count > 0) _lines.Add(NewLine());
+    }
+}

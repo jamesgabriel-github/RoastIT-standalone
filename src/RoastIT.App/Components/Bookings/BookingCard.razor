@@ -1,0 +1,83 @@
+@* One booking as a detailed card (bookings spec §7.1). The whole card opens the detail; the advance and collapse buttons don't. *@
+<article class="bcard @(Expanded ? "expanded" : null)" role="button" tabindex="0" aria-label="@AriaLabel"
+         @onclick="() => OnOpen.InvokeAsync(Row)" @onkeydown="OnKeyDown">
+    <div class="bcard-top">
+        <span class="bid">@(Row.BookingId)@if (Row.OrderTag is { } tag) {<span class="order-tag" aria-hidden="true">@tag</span>}</span>
+        <span class="bcard-top-right">
+            @if (Columns.Status)
+            {
+                <StatusPill Kind="@StatusKey" Label="@ItemStatusRules.Label(Row.Status)" />
+            }
+            @if (Expanded)
+            {
+                <button type="button" class="collapse-btn" aria-expanded="true" aria-label="@($"Collapse {Row.BookingId}")"
+                        @onclick="() => OnCollapse.InvokeAsync(Row)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"><Icon Name="chevUp" Size="16" /></button>
+            }
+        </span>
+    </div>
+
+    @if (Columns.ShowsProductLine)
+    {
+        <div class="bcard-product">
+            @if (Columns.Product) { @Row.ProductName }
+            @if (Columns.CookingTime) { <span class="muted">@(Columns.Product ? " · " : null)@DurationFormat.Format(Row.CookingTimeMin)</span> }
+        </div>
+    }
+    @if (Columns.Customer)
+    {
+        <div class="bcard-line"><Icon Name="person" Size="15" /><span>@Row.CustomerLabel</span></div>
+    }
+    @if (Columns.Pickup)
+    {
+        <div class="bcard-line"><Icon Name="clock" Size="15" /><span>@BookingFormat.DateTimeShort(Calendar.ToLocal(Row.PickupAt))</span></div>
+    }
+    @if (Columns.ShowsMoneyLine)
+    {
+        <div class="bcard-money">
+            @if (Row.OrderCancelled)
+            {
+                @* A fully cancelled order is ₱0 everywhere else (D23), so its card doesn't show the old figures. *@
+                <span class="muted">Cancelled · @Money.Format(0)</span>
+            }
+            else
+            {
+                if (Columns.Total)
+                {
+                    <span><span class="muted">Order</span> <b>@Money.Format(Row.NetTotal)</b>@if (Row.DiscountAmount > 0) { <text> </text><span class="was">@Money.Format(Row.TotalAmount)</span> }</span>
+                }
+                if (Columns.Paid)
+                {
+                    <span><span class="muted">Paid</span> <b>@Money.Format(Row.AmountPaid)</b></span>
+                }
+            }
+        </div>
+    }
+    @if (ItemStatusRules.ActionLabel(Row.Status) is { } action)
+    {
+        <div class="bcard-actions">
+            <button type="button" class="btn btn-sm" @onclick="() => OnAdvance.InvokeAsync(Row)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"><Icon Name="check" Size="15" /> @action</button>
+        </div>
+    }
+</article>
+
+@code {
+    [Inject] private IBusinessCalendar Calendar { get; set; } = default!;
+
+    [Parameter, EditorRequired] public BookingRow Row { get; set; } = default!;
+    [Parameter] public BookingColumns Columns { get; set; } = BookingColumns.All;
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public EventCallback<BookingRow> OnOpen { get; set; }
+    [Parameter] public EventCallback<BookingRow> OnAdvance { get; set; }
+    [Parameter] public EventCallback<BookingRow> OnCollapse { get; set; }
+
+    private string StatusKey => Row.Status.ToString().ToLowerInvariant();
+
+    private string AriaLabel => Row.OrderCount > 1
+        ? $"Booking {Row.BookingId}, {Row.OrderPosition} of {Row.OrderCount} in this order"
+        : $"Booking {Row.BookingId}";
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ") await OnOpen.InvokeAsync(Row);
+    }
+}
