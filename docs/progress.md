@@ -1,6 +1,6 @@
 # RoastIT (Roastline) — Build Progress
 
-Last updated: 2026-11-07 (Phase 4 done, Phase 5 on hold). Read this first in a new session, then `CLAUDE.md` and
+Last updated: 2026-11-07 (Phase 4 done, D33–D35 added after it, Phase 5 on hold). Read this first in a new session, then `CLAUDE.md` and
 `docs/implementation-plan.md` (the source of truth for rules and decisions).
 
 ## Status
@@ -15,7 +15,7 @@ Last updated: 2026-11-07 (Phase 4 done, Phase 5 on hold). Read this first in a n
 | 5 — Release | **On hold** by the owner (2026-11-07). Not started | |
 
 Build state: Android and Windows targets build with 0 errors and
-0 warnings. 465 tests pass, 1 skipped (`dotnet test tests\RoastIT.Tests`; the skipped one is the opt-in ten-year timing).
+0 warnings. 480 tests pass, 1 skipped (`dotnet test tests\RoastIT.Tests`; the skipped one is the opt-in ten-year timing).
 
 ## Environment (this machine)
 
@@ -245,6 +245,33 @@ costs `OrderMath.LineTotal(price, grams)`, rounded to the centavo. Open points a
   plain price (not "/kg"). Neither the Dashboard's Product mix nor the kitchen load counts kilos (they count bookings).
 - **Not run on a device.** Please check on the phone: type `3.2` and get ₱ price × 3.2; the − / + buttons; two lines make two IDs;
   a blank weight shows the message; the decimal keyboard in light and dark mode; the card, detail and created dialog show the kilos.
+
+## D35 change the pickup time (owner's request after the Phase 4 checkpoint; plan §7.3, §9.5, bookings spec §8, §12)
+
+The detail sheet's *Pickup* row has an **Edit** link that opens the New booking pickup picker inline. Saving asks for the Bookings
+PIN (3-minute window) and calls `OrderService.SetPickupAsync`, which moves the **whole order**. Booking IDs don't change. The
+Android target builds with 0 warnings; 480 tests pass, 1 skipped. The Windows target was not built for this change.
+
+- Core: `OrderService.SetPickupAsync`, `ItemStatusRules.CanChangePickup` (same test as cancelling), `BookingDetail.CanChangePickup`,
+  `BookingMessages.CantChangePickup`, `BookingPrompts.ChangePickup`, `AuditActions.PickupChanged` (`order.pickup_changed`).
+- UI: `BookingDetailSheet` (new `Editor.Pickup`; it now takes `Scope` and `Counts` from `Bookings.razor`). The PIN prompt caption
+  reads "Payments, write-offs, pickup changes and cancellations won't ask again for 3 minutes." No migration.
+- Tests: 15 new in `OrderServiceTests` (PIN, whole order moved, IDs kept, audit, old and new date events, window, past time
+  allowed, Cooking allowed, Cooked/Completed/cancelled refused, re-check at save time, locked, 3-minute window).
+- **Not run on a device.** Please check on the phone:
+  1. *Edit* shows next to Pickup on a Pending booking, and not on a Cooked, Completed or cancelled one.
+  2. The picker and its calendar sheet open inside the detail sheet in light and dark mode.
+  3. Save asks for the PIN; then the row, the list, the date strip dots and the Dashboard follow the new time.
+  4. A second pickup change within 3 minutes does not ask again; backing out of the PIN prompt leaves the editor open.
+- The prototype (`bookings-prototype.html`) now has the pickup editor (a `datetime-local` field, PIN, toast) and the new PIN
+  caption. The separate `bookings-prototype_new_book_date_picker.html` was not touched.
+
+### Status chips: selected chip was never highlighted (fixed)
+
+`BookingListTab` and `Menu` passed `Selected="StatusKey"` to `FilterChips`. `Selected` is a `string` parameter, so Razor passed the
+literal text "StatusKey" and no chip ever matched. Fixed with `Selected="@StatusKey"`. The selected chip also got a check mark, bold
+text and a soft ring (`FilterChips.razor`, `.chip` / `.chip.active` in `app.css`; the prototype and bookings spec §6.1 match). Checked
+by the user in Visual Studio. Lesson: a bare identifier on a `string` component parameter is text, not code. Use `@`.
 
 ## Phase 1 device checkpoint (run by the user, Android)
 

@@ -9,6 +9,10 @@ public static class BookingPrompts
     public static string Waive(long balance, string customerLabel, string bookingId) =>
         $"Waive the remaining {Money.Format(balance)} for {customerLabel} ({bookingId}).";
 
+    /// <summary>"Move the pickup for Diego Santos (261008-002) to Nov 9 · 5:00 PM." <paramref name="newPickupLocal"/> is business time.</summary>
+    public static string ChangePickup(IReadOnlyList<string> activeIds, string customerLabel, DateTime newPickupLocal) =>
+        $"Move the pickup for {customerLabel} ({string.Join(", ", activeIds)}) to {BookingFormat.DateTimeShort(newPickupLocal)}.";
+
     /// <summary>
     /// Cancel summary: one booking names it, several list every ID. When money was paid it adds the refund note.
     /// <paramref name="activeIds"/> are the order's non-cancelled bookings.

@@ -9,7 +9,7 @@
            @bind="Search" @bind:event="oninput" />
 </label>
 
-<FilterChips AriaLabel="Filter by status" Items="Chips" Selected="StatusKey" SelectedChanged="OnStatusChanged" />
+<FilterChips AriaLabel="Filter by status" Items="Chips" Selected="@StatusKey" SelectedChanged="OnStatusChanged" />
 
 <div class="list-meta">
     <span class="muted">@BookingFormat.BookingCount(_count)</span>

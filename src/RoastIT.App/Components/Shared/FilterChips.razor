@@ -3,7 +3,13 @@
     {
         var active = chip.Key == Selected;
         <button type="button" class="chip @(active ? "active" : null)" aria-pressed="@(active ? "true" : "false")"
-                @onclick="() => SelectAsync(chip.Key)">@chip.Label</button>
+                @onclick="() => SelectAsync(chip.Key)">
+            @if (active)
+            {
+                <Icon Name="check" Size="14" />
+            }
+            @chip.Label
+        </button>
     }
 </div>
 

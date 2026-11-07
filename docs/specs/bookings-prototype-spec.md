@@ -163,6 +163,8 @@ Bottom sheet over everything (z 60/61).
      re-rendering the field.
 2. **Status chips:** All · Pending · Cooking · Cooked · Completed ·
    Cancelled, each with ` · {count}`.
+   - The **selected** chip is accent-filled with white, bold text, a check mark before the label and a soft 2 px ring, so the
+     active status is obvious (All is selected by default). `aria-pressed` is true on it.
    - Counts are **global**: they ignore the selected date and the search, and cover what "all dates" covers, today ± 6 months (D32).
    - With the seed data: All · 20, Pending · 8, Cooking · 1, Cooked · 1,
      Completed · 9, Cancelled · 1.
@@ -326,7 +328,11 @@ padding, divider between):
 
 - Product
 - Cooking time
-- Pickup (*Oct 9 · 5:00 PM*)
+- Pickup (*Oct 9 · 5:00 PM*), with a small **Edit** link (D35). It opens an inline editor under the row: the New booking
+  pickup picker, the caption "Moves every booking in this order. Booking IDs stay the same.", **Cancel** and **Save pickup**.
+  The link is hidden on a cancelled order and once any booking in the order is Cooked or Completed. Save asks for the Bookings
+  PIN (prompt "Move the pickup for … to Nov 9 · 5:00 PM." → **Move**; 3-minute window), then closes the editor and shows the
+  toast "Pickup moved to …". Saving the unchanged time just closes the editor. A past time is allowed (the picker warns).
 
 ### 8.2 Customer card
 
@@ -676,6 +682,7 @@ business-time minute axis.
 | Record payment | `OrderService.RecordPaymentAsync` | Bookings (3 min) | `payment.recorded` | `OrderChanged` |
 | Discount remaining balance | `OrderService.WriteOffBalanceAsync` | Bookings (3 min) | `order.balance_waived` | `OrderChanged` |
 | Cancel order / booking | `OrderService.CancelOrderAsync` | Bookings (3 min) | `order.cancelled` | `OrderChanged`, `BookingsChanged` |
+| Change pickup time | `OrderService.SetPickupAsync` | Bookings (3 min) | `order.pickup_changed` | `OrderChanged`, `BookingsChanged` (old and new date) |
 | List, counts, strip badges, calendar dots | Booking queries | — | — | — |
 | Dashboard | `DashboardService` | — | — | — |
 
@@ -791,6 +798,7 @@ business-time minute axis.
 
 - [ ] Chips show global counts; search finds IDs, products, customers
       and "walk-in".
+- [ ] The selected status chip is clearly marked (accent fill, check mark, ring), including All on first open.
 - [ ] Grouping only with all dates + pickup sort.
 - [ ] Every sort field and direction label matches §6.4.
 - [ ] Compact rows show time only when the day is clear, expand into the
@@ -818,6 +826,9 @@ business-time minute axis.
       paid money.
 - [ ] Cancel is refused once anything is cooked or completed (also when
       it changes while the prompt is open).
+- [ ] *Edit* next to Pickup shows only while the order can still be cancelled (nothing cooked or completed); saving asks for the
+      PIN (not again within 3 minutes), moves every booking in the order and keeps the IDs; an unchanged time asks for nothing;
+      the list, strip badges and Dashboard follow the new date.
 
 **New booking**
 

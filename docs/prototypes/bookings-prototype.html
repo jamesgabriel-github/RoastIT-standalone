@@ -140,8 +140,9 @@
   .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   .chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px; }
-  .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
-  .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted); font-size: 13px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+  /* The selected chip: accent fill, bolder text, a soft ring and a check mark (see the chip markup), so it is obvious which status is shown. */
+  .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 700; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
   .list-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
   .list-meta-actions { display: flex; gap: 6px; min-width: 0; }
   .meta-btn {
@@ -759,6 +760,7 @@
     confirm: null,       // { bookingId, actionLabel, nextStatusLabel } | null
     discountDraft: null, // { orderKey, value } | null
     paymentDraft: null,  // { orderKey, value } | null
+    pickupDraft: null,   // { orderKey, value, error } | null  (value = datetime-local text; D35)
     nextSeqToday: 4,
     newForm: defaultNewForm(),
     kitchenSel: null,    // index of the tapped kitchen-load bar
@@ -956,7 +958,7 @@
             <span class="pin-icon">${icon('<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>', 20)}</span>
             <h2 id="pin-title">Enter your PIN to continue</h2>
             <p class="pin-detail">${esc(p.detail)}</p>
-            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs and cancellations won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
+            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs, pickup changes and cancellations won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
           </div>
           <div class="pin-dots ${p.shake ? 'pin-shake' : ''}" aria-live="polite" aria-label="${p.entry.length} digits entered">${dots}</div>
           <div class="pin-msg" role="alert">${esc(msg)}</div>
@@ -978,8 +980,8 @@
   // Actions — the only code allowed to mutate state.
   // ---------------------------------------------------------------------------------
   const Actions = {
-    openDetail(bookingId) { state.drawer = { type: 'detail', bookingId }; state.discountDraft = null; state.paymentDraft = null; render(); },
-    closeDrawer() { state.drawer = null; state.discountDraft = null; state.paymentDraft = null; render(); },
+    openDetail(bookingId) { state.drawer = { type: 'detail', bookingId }; state.discountDraft = null; state.paymentDraft = null; state.pickupDraft = null; render(); },
+    closeDrawer() { state.drawer = null; state.discountDraft = null; state.paymentDraft = null; state.pickupDraft = null; render(); },
     openNewForm() { state.drawer = { type: 'new' }; render(); },
 
     openSheet(name) {
@@ -1062,7 +1064,7 @@
         const current = state.items.filter((it) => it.orderKey === orderKey);
         if (!orderCancellable(current)) { showToast("Can't cancel — part of this order is already cooked or completed."); render(); return; }
         state.items = state.items.map((it) => (it.orderKey === orderKey && it.status !== 'cancelled' ? Object.assign({}, it, { status: 'cancelled' }) : it));
-        state.discountDraft = null; state.paymentDraft = null;
+        state.discountDraft = null; state.paymentDraft = null; state.pickupDraft = null;
         showToast(toCancel.length === 1 ? ids[0] + ' cancelled' : 'Order cancelled · ' + toCancel.length + ' bookings');
         render();
       });
@@ -1072,6 +1074,7 @@
       const order = state.orders.find((o) => o.key === orderKey);
       state.discountDraft = { orderKey, value: order && order.discountAmount ? String(order.discountAmount) : '' };
       state.paymentDraft = null;
+      state.pickupDraft = null;
       state.focusAfterRender = 'discount-input';
       render();
     },
@@ -1118,6 +1121,7 @@
       const bal = order ? orderBalance(order) : 0;
       state.paymentDraft = { orderKey, value: bal > 0 ? String(bal) : '' };
       state.discountDraft = null;
+      state.pickupDraft = null;
       state.focusAfterRender = 'payment-input';
       render();
     },
@@ -1140,6 +1144,47 @@
         state.orders = state.orders.map((o) => (o.key === orderKey ? Object.assign({}, o, { amountPaid: o.amountPaid + paid }) : o)); // additive, never an overwrite
         state.paymentDraft = null;
         showToast('Recorded ' + formatMoney(paid) + ' payment');
+        render();
+      });
+    },
+
+    // Change the pickup of the whole order (D35). Same picker as New booking, Bookings PIN (3-minute window), booking IDs stay.
+    openPickupEditor(orderKey) {
+      const order = state.orders.find((o) => o.key === orderKey);
+      if (!order) return;
+      state.pickupDraft = { orderKey, value: order.pickupAt, error: '' };
+      state.discountDraft = null; state.paymentDraft = null; // opening one editor closes the others
+      render();
+    },
+    cancelPickupEdit() { state.pickupDraft = null; render(); },
+    savePickup() {
+      const draft = state.pickupDraft;
+      if (!draft) return;
+      const orderKey = draft.orderKey;
+      const order = state.orders.find((o) => o.key === orderKey);
+      if (!order) return;
+      const value = (draft.value || '').slice(0, 16);
+      const fail = (msg) => { state.pickupDraft = Object.assign({}, draft, { error: msg }); render(); };
+      if (!value) return fail('Pick a date and time.');
+      const day = value.slice(0, 10);
+      if (day < MIN_SCHEDULABLE_DATE || day > MAX_SCHEDULABLE_DATE) return fail('Pickup must be within 6 months of today.');
+      if (value === order.pickupAt) { state.pickupDraft = null; render(); return; } // unchanged: no PIN, nothing saved
+      const activeIds = state.items.filter((it) => it.orderKey === orderKey && it.status !== 'cancelled').map((it) => it.bookingId).sort();
+      requestPin({
+        detail: 'Move the pickup for ' + customerLabel(order) + ' (' + activeIds.join(', ') + ') to ' + formatDateTime(value) + '.',
+        confirmLabel: 'Move',
+        rememberMs: BOOKING_PIN_REMEMBER_MS
+      }, () => {
+        // Checked again after the PIN, like cancel: nothing may be cooked or completed by now.
+        const current = state.items.filter((it) => it.orderKey === orderKey);
+        if (!orderCancellable(current)) {
+          state.pickupDraft = Object.assign({}, draft, { error: "Can't change the pickup — part of this order is already cooked or completed." });
+          render();
+          return;
+        }
+        state.orders = state.orders.map((o) => (o.key === orderKey ? Object.assign({}, o, { pickupAt: value }) : o)); // the whole order moves; IDs stay
+        state.pickupDraft = null;
+        showToast('Pickup moved to ' + formatDateTime(value));
         render();
       });
     },
@@ -1498,7 +1543,8 @@
       const hasDiscount = !!(order && order.discountAmount);
       const discountEditing = !!(order && state.discountDraft && state.discountDraft.orderKey === order.key);
       const paymentEditing = !!(order && state.paymentDraft && state.paymentDraft.orderKey === order.key);
-      const showDiscountRemainingBalance = !!order && balance > 0 && balance < order.totalAmount * 0.1 && !discountEditing && !paymentEditing;
+      const pickupEditing = !!(order && state.pickupDraft && state.pickupDraft.orderKey === order.key);
+      const showDiscountRemainingBalance = !!order && balance > 0 && balance < order.totalAmount * 0.1 && !discountEditing && !paymentEditing && !pickupEditing;
       const pct = order && order.totalAmount > 0 ? Math.round((balance / order.totalAmount) * 1000) / 10 : 0;
       const orderItems = items.filter((it) => it.orderKey === selectedItem.orderKey);
       detail = {
@@ -1506,6 +1552,9 @@
         product: selectedItem.product,
         cookingTimeLabel: product ? formatDuration(product.cookingTimeMin) : '—',
         pickupLabel: order ? formatDateTime(order.pickupAt) : '—',
+        // D35: the pickup can move while the order has a pending/cooking item and nothing cooked or completed (same test as cancelling).
+        canEditPickup: !!order && orderCancellable(orderItems) && !pickupEditing,
+        pickupEditing, pickupDraftValue: pickupEditing ? state.pickupDraft.value : '', pickupError: pickupEditing ? state.pickupDraft.error : '',
         customer: customerLabel(order),
         phone: order && order.phone ? order.phone : '',
         statusLabel: meta.label, statusColor: meta.css,
@@ -1516,11 +1565,11 @@
         discountLabel: order ? '−' + formatMoney(order.discountAmount || 0) : '',
         netTotalLabel: order ? formatMoney(netTotal(order)) : '—',
         maxDiscountLabel: order ? formatMoney(order.totalAmount) : '',
-        showApplyDiscountLink: !!order && !hasDiscount && !discountEditing && !paymentEditing,
+        showApplyDiscountLink: !!order && !hasDiscount && !discountEditing && !paymentEditing && !pickupEditing,
         showDiscountRow: hasDiscount && !discountEditing,
         canEditDiscount: !paymentEditing,
         discountEditing, discountDraftValue: discountEditing ? state.discountDraft.value : '',
-        showRecordPaymentLink: !!order && balance > 0 && !paymentEditing && !discountEditing,
+        showRecordPaymentLink: !!order && balance > 0 && !paymentEditing && !discountEditing && !pickupEditing,
         paymentEditing, paymentDraftValue: paymentEditing ? state.paymentDraft.value : '',
         showDiscountRemainingBalance, remainingBalancePctLabel: pct + '%',
         notes: order && order.notes ? order.notes : '',
@@ -1749,7 +1798,7 @@
         <input class="input" type="search" enterkeyhint="search" data-input="search" value="${esc(state.search)}" placeholder="Search ID, product, or customer" autocomplete="off" />
       </label>
       <div class="chip-row no-scrollbar" data-scroll-key="chips">
-        ${vm.chips.map((c) => `<button type="button" class="chip ${c.active ? 'active' : ''}" data-action="set-status-filter" data-key="${c.key}" aria-pressed="${c.active}">${c.label}</button>`).join('')}
+        ${vm.chips.map((c) => `<button type="button" class="chip ${c.active ? 'active' : ''}" data-action="set-status-filter" data-key="${c.key}" aria-pressed="${c.active}">${c.active ? icon(ICONS.check, 14) : ''}${c.label}</button>`).join('')}
       </div>
       <div class="list-meta">
         <span class="muted" data-region="count">${vm.countLabel}</span>
@@ -1842,7 +1891,15 @@
             <p class="dsec-title">Booking</p>
             <div class="drow"><span class="k">Product</span><span class="v">${esc(d.product)}</span></div>
             <div class="drow"><span class="k">Cooking time</span><span class="v">${d.cookingTimeLabel}</span></div>
-            <div class="drow"><span class="k">Pickup</span><span class="v">${d.pickupLabel}</span></div>
+            <div class="drow"><span class="k">Pickup${d.canEditPickup ? ` <button type="button" class="text-btn" data-action="open-pickup" data-order-key="${ok}">Edit</button>` : ''}</span><span class="v">${d.pickupLabel}</span></div>
+            ${d.pickupEditing ? `
+            <div class="inline-editor">
+              <label class="field-label" for="pickup-input">Pickup date &amp; time</label>
+              <input id="pickup-input" class="input" type="datetime-local" data-input="pickup-draft" value="${esc(d.pickupDraftValue)}" min="${MIN_SCHEDULABLE_DATE}T00:00" max="${MAX_SCHEDULABLE_DATE}T23:59" />
+              <span class="caption">Moves every booking in this order. Booking IDs stay the same.</span>
+              ${d.pickupError ? `<p class="form-error" role="alert">${esc(d.pickupError)}</p>` : ''}
+              <div class="inline-row"><button type="button" class="btn btn-sm" data-action="cancel-pickup">Cancel</button><button type="button" class="btn btn-sm btn-primary" data-action="save-pickup">Save pickup</button></div>
+            </div>` : ''}
           </section>
           <section class="card">
             <p class="dsec-title">Customer</p>
@@ -2114,6 +2171,9 @@
       case 'open-payment': Actions.openPaymentEditor(d.orderKey); break;
       case 'cancel-payment': Actions.cancelPaymentEdit(); break;
       case 'save-payment': Actions.savePayment(); break;
+      case 'open-pickup': Actions.openPickupEditor(d.orderKey); break;
+      case 'cancel-pickup': Actions.cancelPickupEdit(); break;
+      case 'save-pickup': Actions.savePickup(); break;
       case 'select-line-product': Actions.setLineProduct(parseInt(d.index, 10), d.product); break;
       case 'qty-step': Actions.stepQty(parseInt(d.index, 10), parseInt(d.delta, 10)); break;
       case 'add-line': Actions.addLineItem(); break;
@@ -2152,6 +2212,7 @@
     if (key === 'search') { state.search = el.value; renderRegions(['results', 'count']); return; }
     if (key === 'discount-draft') { if (state.discountDraft) state.discountDraft.value = el.value; return; }
     if (key === 'payment-draft') { if (state.paymentDraft) state.paymentDraft.value = el.value; return; }
+    if (key === 'pickup-draft') { if (state.pickupDraft) state.pickupDraft.value = el.value; return; }
     if (key === 'line-qty') {
       const i = parseInt(el.dataset.index, 10);
       const lines = state.newForm.lineItems.slice();

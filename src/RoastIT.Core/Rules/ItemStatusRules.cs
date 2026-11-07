@@ -47,6 +47,12 @@ public static class ItemStatusRules
         return any;
     }
 
+    /// <summary>
+    /// The pickup can be moved only while the order has a Pending or Cooking item and none that is Cooked or Completed (D35):
+    /// once food is ready the customer has been told a time. The same test as cancelling.
+    /// </summary>
+    public static bool CanChangePickup(IEnumerable<ItemStatus> statuses) => CanCancelOrder(statuses);
+
     /// <summary>True when the order has items and every one is Cancelled. Such an order drops out of the money figures (D23).</summary>
     public static bool IsFullyCancelled(IEnumerable<ItemStatus> statuses)
     {

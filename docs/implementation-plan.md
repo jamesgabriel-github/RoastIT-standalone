@@ -462,6 +462,14 @@ public static class OrderMath
   Refunds are not tracked in the app.
 - Write an `audit_logs` row (`order.cancelled`, with the booking IDs).
 
+**Changing the pickup (D35)** is per order too.
+- `OrderService.SetPickupAsync(orderKey, pickupAtUtc, confirmation)`: Bookings PIN (3-minute window). Refused when the order is
+  cancelled or has a Cooked or Completed item (checked again at save time), or when the date is outside today ± 6 months (D32).
+  A Cooking item is fine and keeps its `started_cooking_at`; a time already past is allowed. Booking IDs stay (they come from
+  the order date). An unchanged time writes nothing.
+- Audit `order.pickup_changed` (booking IDs, before, after). Events: `OrderChanged`, plus `BookingsChanged` for the old and the
+  new date.
+
 ### 7.4 Dates and scope
 
 - `IBusinessCalendar`:
@@ -493,7 +501,9 @@ public static class OrderMath
   finds blank names), case-insensitive, combined with status and date.
 - **Status chips** show **global** counts that ignore the selected date and
   the search, over the same ±6-month window as "all dates" (D32):
-  All · Pending · Cooking · Cooked · Completed · Cancelled.
+  All · Pending · Cooking · Cooked · Completed · Cancelled. The selected
+  chip is accent-filled, bold, with a check mark and a soft ring (All is
+  selected on first open); the same `FilterChips` component is used on Menu.
 - **Sort:** Pickup time, Status (pipeline order), Booking ID, Customer,
   Product, Cooking time, each ascending or descending with its own labels
   (see the prototype's sort sheet).
@@ -635,6 +645,7 @@ public async Task RecordPaymentAsync(Guid orderKey, long amount, PinConfirmation
 | Bookings | Record payment | "Record a ₱500 payment from Diego Santos (261008-002)." → **Record** | **3 minutes** |
 | Bookings | Discount remaining balance | "Waive the remaining ₱150 for Diego Santos (261008-003)." → **Waive** | **3 minutes** |
 | Bookings | Cancel booking / Cancel order (whole order, §7.3) | "Cancel the whole order for The Garden Events Co.: 2 bookings (261009-001, 261009-002)." → **Confirm** | **3 minutes** |
+| Bookings | Change pickup time (whole order, D35) | "Move the pickup for Diego Santos (261008-002) to Nov 9 · 5:00 PM." → **Move** | **3 minutes** |
 | Settings | Export data | "Export all bookings, payments and the menu to a backup file." → **Export** | No, every time |
 | Settings | Import data | "Replace all data on this device with roastline-backup-….roastline." → **Replace** | No, every time |
 
@@ -643,7 +654,7 @@ Behavior:
   action, and a ₱0 payment just closes the editor.
 - **The prompt:** a bottom sheet with a lock icon, "Enter your PIN to
   continue", the one-line summary and a keypad. Bookings prompts add
-  "Payments, write-offs and cancellations won't ask again for 3 minutes."
+  "Payments, write-offs, pickup changes and cancellations won't ask again for 3 minutes."
 - **Cancel, back or tapping outside** saves nothing and leaves the form or
   editor open.
 - **The 3-minute window:**
@@ -767,7 +778,12 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
   (with confirm) when there's a next status.
 - **Detail sheet**
   - **Header:** back, booking ID, status pill.
-  - **Booking:** product, cooking time, pickup.
+  - **Booking:** product, weight, cooking time, pickup. The pickup row has
+    an **Edit** link (D35) that opens the New booking pickup picker inline
+    ("Moves every booking in this order. Booking IDs stay the same."),
+    with Cancel / Save pickup. It shows only while nothing in the order is
+    cooked or completed (and the order isn't cancelled). Saving asks for
+    the Bookings PIN (§9.5).
   - **Customer:** name, and phone as a `tel:` link (or "Not on file").
   - **Payment:**
     1. total
@@ -777,7 +793,7 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
     5. "+ Record payment"
     6. balance due
     7. the write-off banner when the balance is under 10%
-  - Only one inline editor (discount or payment) is open at a time.
+  - Only one inline editor (discount, payment or pickup) is open at a time.
   - **Also in this order:** sibling items, tappable.
   - **Footer:** "Cancel order" / "Cancel booking" (whole order, PIN,
     only while nothing in the order is cooked or completed — §7.3) and the
@@ -1318,6 +1334,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D32 | **Bookings opens on today, and "all dates" means today ± 6 months** (owner's decision). `BookingScopeState` starts with today selected; tapping it again (or "All") shows all dates. "All dates" (the list, the status chips and the Dashboard) covers pickups from the start of today − 6 months to the end of today + 6 months, the same window the date strip and calendar allow. Older bookings stay in the database, in exports and in audit history, but the Bookings page doesn't show them. With ten years of generated data, the all-dates list read went from ≈540 ms to ≈90 ms on a desktop PC and no longer grows with history. *Was Q36; changes the Phase 3 default of "all dates = every booking", shown first* | 2026-11-07 | §7.4, §7.5, §7.6, bookings spec §2 |
 | D33 | **Export has a second button, "Save to a folder…"** (owner's request; Android). It opens the system "save as" screen so the owner chooses where on the phone the backup goes, and because the app writes the file itself it knows the save happened, so "Last export" is exact on this path. The share-sheet button stays as it was (Q29 still applies to it). Windows shows only the share button for now | 2026-11-07 | §10.5, settings spec §4.3 |
 | D34 | **A booking's quantity is a weight in kilos, not a number of bookings** (owner's request). One product line = one booking = one booking ID, with its weight in kilos on it (3.2 kg is one booking). The product's price is per kilo, so a line costs price × kilos. Stored as `items.weight_g` (whole grams). *(Replaces the Phase 3 rule "one item and one ID per unit": quantity 3 used to make 3 bookings.)* | 2026-11-07 | §6.2, §7.1, §7.2, §9, bookings spec §9 |
+| D35 | **A booking's pickup time can be changed** (owner's request). The pickup lives on the order, so one change moves every booking in it; booking IDs don't change (they come from the order date). Needs a **Bookings PIN confirmation (3-minute window)**. Allowed while the order is not cancelled and has no Cooked or Completed item (the same test as cancelling); a Cooking item is fine and keeps its `started_cooking_at`. The new time must be inside the D32 window; a time already past is allowed (the picker warns). Audited as `order.pickup_changed`. Raises `OrderChanged` and `BookingsChanged` for the old and the new date. *(Adds to D7.)* | 2026-11-07 | §7.3, §9.5, bookings spec §8, §12 |
 
 ---
 

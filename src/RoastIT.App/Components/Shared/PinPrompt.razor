@@ -14,7 +14,7 @@
             <p class="pin-detail">@request.Summary</p>
             @if (request.Scope == PinScope.Bookings)
             {
-                <p class="caption" style="max-width:300px;">Payments, write-offs and cancellations won't ask again for 3 minutes.</p>
+                <p class="caption" style="max-width:300px;">Payments, write-offs, pickup changes and cancellations won't ask again for 3 minutes.</p>
             }
         </div>
         <PinDots Count="_entry.Length" Shake="_shake" />

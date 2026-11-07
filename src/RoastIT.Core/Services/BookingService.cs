@@ -38,6 +38,9 @@ public sealed record BookingDetail(BookingRow Item, IReadOnlyList<BookingRow> Or
 
     public bool CanCancel => ItemStatusRules.CanCancelOrder(OrderItems.Select(r => r.Status));
 
+    /// <summary>The pickup can still be moved (D35).</summary>
+    public bool CanChangePickup => ItemStatusRules.CanChangePickup(OrderItems.Select(r => r.Status));
+
     /// <summary>Non-cancelled bookings: "Cancel order" when more than one, else "Cancel booking" (plan §7.3).</summary>
     public int ActiveCount => OrderItems.Count(r => r.Status != ItemStatus.Cancelled);
 

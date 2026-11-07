@@ -32,6 +32,9 @@ public static class BookingMessages
     /// <summary>Caption under the detail cards (bookings spec §8.5).</summary>
     public const string CantCancelCaption = "This order can't be cancelled: part of it is already cooked or completed.";
 
+    /// <summary>Refusal when the order has a Cooked or Completed item (D35).</summary>
+    public const string CantChangePickup = "Can't change the pickup — part of this order is already cooked or completed.";
+
     public static string NotAvailable(string product) => $"{product} isn't available for booking.";
 
     public static string AlreadyAtStatus(string bookingId, string status) => $"{bookingId} is already {status}.";

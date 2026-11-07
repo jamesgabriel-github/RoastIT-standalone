@@ -125,6 +125,45 @@ public sealed class OrderService(IBookingStore store, IAppLock appLock, IChangeN
         return result.Item1;
     }
 
+    /// <summary>
+    /// Moves the pickup of the whole order (D35). Needs a Bookings PIN confirmation. The new time must fall within the
+    /// schedulable window (D32), and the order must still have a Pending or Cooking item and none that is Cooked or Completed.
+    /// A time in the past is allowed (the form warns). Booking IDs don't change. Nothing is written when the time is unchanged.
+    /// Returns true when the pickup was changed.
+    /// </summary>
+    public async Task<bool> SetPickupAsync(Guid orderKey, DateTime pickupAtUtc, PinConfirmation? confirmation, CancellationToken ct = default)
+    {
+        appLock.EnsureUnlocked();
+        appLock.EnsureConfirmed(confirmation, PinScope.Bookings);
+
+        if (!ScheduleWindow.Contains(calendar.Today(), calendar.DateOf(pickupAtUtc)))
+            throw new ValidationException(BookingMessages.PickupOutsideWindow);
+
+        var result = await store.MutateOrderAsync(orderKey, order =>
+        {
+            var statuses = order.Items.Select(i => i.Status).ToList();
+            if (ItemStatusRules.IsFullyCancelled(statuses)) throw new ValidationException(BookingMessages.OrderCancelled);
+            if (!ItemStatusRules.CanChangePickup(statuses)) throw new ValidationException(BookingMessages.CantChangePickup);
+
+            var before = order.PickupAt;
+            if (before == pickupAtUtc) return new OrderMutation<(bool, DateTime)>((false, before), []);
+
+            order.PickupAt = pickupAtUtc;
+            var audit = AuditLog.Create(AuditActions.PickupChanged, "order", order.Key.ToString(), clock.UtcNow,
+                new { bookingIds = Ids(order), before, after = pickupAtUtc });
+            return new OrderMutation<(bool, DateTime)>((true, before), [audit]);
+        }, ct);
+
+        if (!result.Item1) return false;
+
+        changes.NotifyOrderChanged(orderKey);
+        var oldDate = calendar.DateOf(result.Item2);
+        var newDate = calendar.DateOf(pickupAtUtc);
+        changes.NotifyBookingsChanged(oldDate);
+        if (newDate != oldDate) changes.NotifyBookingsChanged(newDate);
+        return true;
+    }
+
     private static void EnsureNotCancelled(Order order)
     {
         if (ItemStatusRules.IsFullyCancelled(order.Items.Select(i => i.Status)))

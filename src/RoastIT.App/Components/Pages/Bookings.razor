@@ -37,7 +37,8 @@ else
     <Fab Label="New booking" OnClick="OpenNew" />
 }
 
-<BookingDetailSheet Open="_detailOpen" BookingId="@_detailId" OnClose="CloseDetail" OnSelect="SelectBooking" />
+<BookingDetailSheet Open="_detailOpen" BookingId="@_detailId" OnClose="CloseDetail" OnSelect="SelectBooking"
+                    Scope="Scope" Counts="_countsByDate" />
 
 <NewBookingSheet Open="_newOpen" OnClose="CloseNew" Scope="Scope" Counts="_countsByDate" OnCreated="ShowCreated" />
 

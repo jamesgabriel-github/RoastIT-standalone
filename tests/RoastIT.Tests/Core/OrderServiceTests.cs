@@ -226,6 +226,180 @@ public class OrderServiceTests : BookingsTestBase
         Assert.Equal(0, OrderMath.Balance(await LoadOrderAsync(key)));
     }
 
+    // ---- Pickup (D35) ------------------------------------------------------------
+
+    [Fact]
+    public async Task Pickup_change_is_refused_without_a_Bookings_PIN_confirmation_and_changes_nothing()
+    {
+        var (key, _) = await NewOrderAsync();
+
+        await Assert.ThrowsAsync<PinRequiredException>(() => Orders.SetPickupAsync(key, Local(2026, 11, 10, 15), null));
+
+        Assert.Equal(Tomorrow10, (await LoadOrderAsync(key)).PickupAt);
+        Assert.Empty(await AuditAsync(AuditActions.PickupChanged));
+        Assert.Empty(Events);
+    }
+
+    [Fact]
+    public async Task Pickup_change_moves_the_whole_order_keeps_the_booking_IDs_and_is_audited()
+    {
+        var (key, ids) = await NewOrderAsync(bookings: 3);
+        var newPickup = Local(2026, 11, 10, 15, 30);
+
+        Assert.True(await Orders.SetPickupAsync(key, newPickup, await BookingsPinAsync()));
+
+        var order = await LoadOrderAsync(key);
+        Assert.Equal(newPickup, order.PickupAt);
+        Assert.Equal(ids, order.Items.Select(i => i.BookingId).OrderBy(i => i, StringComparer.Ordinal));
+
+        var audit = Assert.Single(await AuditAsync(AuditActions.PickupChanged));
+        using var details = JsonDocument.Parse(audit.Details!);
+        Assert.Equal(ids, details.RootElement.GetProperty("bookingIds").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(Tomorrow10, details.RootElement.GetProperty("before").GetDateTime().ToUniversalTime());
+        Assert.Equal(newPickup, details.RootElement.GetProperty("after").GetDateTime().ToUniversalTime());
+
+        // Both the old day and the new day refresh.
+        Assert.Equal(["order", "bookings:2026-11-08", "bookings:2026-11-10"], Events);
+    }
+
+    [Fact]
+    public async Task Moving_the_pickup_within_the_same_day_announces_that_day_once()
+    {
+        var (key, _) = await NewOrderAsync();
+
+        await Orders.SetPickupAsync(key, Local(2026, 11, 8, 17), await BookingsPinAsync());
+
+        Assert.Equal(["order", "bookings:2026-11-08"], Events);
+    }
+
+    [Fact]
+    public async Task Moved_bookings_are_listed_on_their_new_day()
+    {
+        var (key, _) = await NewOrderAsync();
+        await Orders.SetPickupAsync(key, Local(2026, 11, 10, 9), await BookingsPinAsync());
+
+        Assert.Empty(await Bookings.ListAsync(new DateOnly(2026, 11, 8)));
+        Assert.Single(await Bookings.ListAsync(new DateOnly(2026, 11, 10)));
+    }
+
+    [Fact]
+    public async Task Setting_the_same_pickup_writes_nothing_and_announces_nothing()
+    {
+        var (key, _) = await NewOrderAsync();
+
+        Assert.False(await Orders.SetPickupAsync(key, Tomorrow10, await BookingsPinAsync()));
+
+        Assert.Empty(await AuditAsync(AuditActions.PickupChanged));
+        Assert.Empty(Events);
+    }
+
+    [Fact]
+    public async Task Pickup_inside_the_PIN_window_needs_no_second_PIN_but_asks_again_after_three_minutes()
+    {
+        var (key, _) = await NewOrderAsync();
+        await Orders.SetPickupAsync(key, Local(2026, 11, 9, 10), await BookingsPinAsync());
+
+        await Orders.SetPickupAsync(key, Local(2026, 11, 9, 11), null);
+
+        Fx.Clock.Advance(TimeSpan.FromMinutes(3) + TimeSpan.FromSeconds(1));
+        await Assert.ThrowsAsync<PinRequiredException>(() => Orders.SetPickupAsync(key, Local(2026, 11, 9, 12), null));
+    }
+
+    [Fact]
+    public async Task Pickup_must_stay_within_six_months_of_today()
+    {
+        var (key, _) = await NewOrderAsync();
+        var pin = await BookingsPinAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Orders.SetPickupAsync(key, Local(2027, 5, 8), pin));
+        Assert.Equal(BookingMessages.PickupOutsideWindow, ex.Message);
+        await Assert.ThrowsAsync<ValidationException>(() => Orders.SetPickupAsync(key, Local(2026, 5, 6), pin));
+        await Orders.SetPickupAsync(key, Local(2027, 5, 7), pin); // the last day is allowed
+
+        Assert.Equal(Local(2027, 5, 7), (await LoadOrderAsync(key)).PickupAt);
+    }
+
+    [Fact]
+    public async Task A_pickup_that_has_already_passed_is_allowed()
+    {
+        var (key, _) = await NewOrderAsync();
+
+        await Orders.SetPickupAsync(key, Local(2026, 11, 7, 8), await BookingsPinAsync()); // 8 AM, it is 11 AM
+
+        Assert.Equal(Local(2026, 11, 7, 8), (await LoadOrderAsync(key)).PickupAt);
+    }
+
+    [Fact]
+    public async Task Pickup_can_still_move_while_an_item_is_cooking()
+    {
+        var (key, ids) = await NewOrderAsync(bookings: 2);
+        await SetStatusAsync(ids[0], ItemStatus.Cooking);
+
+        await Orders.SetPickupAsync(key, Local(2026, 11, 9, 10), await BookingsPinAsync());
+
+        Assert.Equal(Local(2026, 11, 9, 10), (await LoadOrderAsync(key)).PickupAt);
+    }
+
+    [Theory]
+    [InlineData(ItemStatus.Cooked)]
+    [InlineData(ItemStatus.Completed)]
+    public async Task Pickup_is_refused_once_any_item_is_cooked_or_completed_and_nothing_changes(ItemStatus blocking)
+    {
+        var (key, ids) = await NewOrderAsync(bookings: 2);
+        await SetStatusAsync(ids[0], blocking);
+        var pin = await BookingsPinAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Orders.SetPickupAsync(key, Local(2026, 11, 9, 10), pin));
+
+        Assert.Equal(BookingMessages.CantChangePickup, ex.Message);
+        Assert.Equal(Tomorrow10, (await LoadOrderAsync(key)).PickupAt);
+        Assert.Empty(await AuditAsync(AuditActions.PickupChanged));
+        Assert.Empty(Events);
+    }
+
+    [Fact]
+    public async Task Pickup_rechecks_at_save_time_when_the_order_moved_on_after_the_PIN()
+    {
+        var (key, ids) = await NewOrderAsync();
+        var pin = await BookingsPinAsync();
+        await SetStatusAsync(ids[0], ItemStatus.Cooked);
+
+        await Assert.ThrowsAsync<ValidationException>(() => Orders.SetPickupAsync(key, Local(2026, 11, 9, 10), pin));
+        Assert.Equal(Tomorrow10, (await LoadOrderAsync(key)).PickupAt);
+    }
+
+    [Fact]
+    public async Task A_cancelled_order_takes_no_pickup_change()
+    {
+        var (key, _) = await NewOrderAsync();
+        var pin = await BookingsPinAsync();
+        await Orders.CancelOrderAsync(key, pin);
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Orders.SetPickupAsync(key, Local(2026, 11, 9, 10), null));
+
+        Assert.Equal(BookingMessages.OrderCancelled, ex.Message);
+        Assert.Equal(Tomorrow10, (await LoadOrderAsync(key)).PickupAt);
+    }
+
+    [Fact]
+    public async Task Pickup_change_is_refused_while_locked()
+    {
+        var (key, _) = await NewOrderAsync();
+        var pin = await BookingsPinAsync();
+        Lock.Lock();
+        await Assert.ThrowsAsync<AccessDeniedException>(() => Orders.SetPickupAsync(key, Local(2026, 11, 9, 10), pin));
+    }
+
+    [Fact]
+    public async Task The_CSV_window_follows_the_new_pickup()
+    {
+        var (key, _) = await NewOrderAsync(); // Nov 8 10:00; "now" is Nov 7 11:00, so inside ±24 h
+        await Orders.SetPickupAsync(key, Local(2026, 11, 12, 10), await BookingsPinAsync());
+
+        var rows = await Store.ListRowsByPickupAsync(Fx.Clock.UtcNow.AddHours(-24), Fx.Clock.UtcNow.AddHours(24));
+        Assert.Empty(rows);
+    }
+
     // ---- Cancel ------------------------------------------------------------------
 
     [Fact]

@@ -142,7 +142,8 @@ textarea.input { height: auto; min-height: 96px; padding: 12px; resize: vertical
 /* ---- Chips, meta buttons, pills, empty ---- */
 .chip-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px; }
 .chip { flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.chip { display: inline-flex; align-items: center; gap: 5px; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 700; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
 .list-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
 .list-meta-actions { display: flex; gap: 6px; min-width: 0; }
 .meta-btn {

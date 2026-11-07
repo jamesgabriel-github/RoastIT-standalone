@@ -105,7 +105,7 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 |---|---|
 | Menu add / edit / activate / deactivate | Every time (single-use confirmation) |
 | Settings Export / Import | Every time (`PinScope.Data`, single-use) |
-| Bookings record payment, "Discount remaining balance", cancel order | Remembered for **3 minutes**; the window is cleared on lock |
+| Bookings record payment, "Discount remaining balance", cancel order, change pickup time | Remembered for **3 minutes**; the window is cleared on lock |
 | Create booking, manual discount, advance status | Not asked |
 
 **App lock**

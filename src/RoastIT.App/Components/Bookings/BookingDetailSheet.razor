@@ -30,7 +30,28 @@
                 <div class="drow"><span class="k">Product</span><span class="v">@item.ProductName</span></div>
                 <div class="drow"><span class="k">Weight</span><span class="v">@Weight.Format(item.WeightGrams)</span></div>
                 <div class="drow"><span class="k">Cooking time</span><span class="v">@DurationFormat.Format(item.CookingTimeMin)</span></div>
-                <div class="drow"><span class="k">Pickup</span><span class="v">@BookingFormat.DateTimeShort(Calendar.ToLocal(item.PickupAt))</span></div>
+                <div class="drow">
+                    <span class="k">
+                        Pickup
+                        @if (d.CanChangePickup && !cancelled && _editor != Editor.Pickup)
+                        {
+                            <button type="button" class="text-btn" @onclick="OpenPickup">Edit</button>
+                        }
+                    </span>
+                    <span class="v">@BookingFormat.DateTimeShort(Calendar.ToLocal(item.PickupAt))</span>
+                </div>
+                @if (_editor == Editor.Pickup)
+                {
+                    <div class="inline-editor">
+                        <PickupPicker @bind-Value="_pickupDraft" Scope="Scope" Counts="Counts" />
+                        <span class="caption">Moves every booking in this order. Booking IDs stay the same.</span>
+                        @if (_error.Length > 0) { <p class="form-error" role="alert">@_error</p> }
+                        <div class="inline-row">
+                            <button type="button" class="btn btn-sm" @onclick="CloseEditor">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-primary" disabled="@_busy" @onclick="SavePickupAsync">Save pickup</button>
+                        </div>
+                    </div>
+                }
             </section>
 
             <section class="card">
@@ -159,10 +180,11 @@
 </Sheet>
 
 @code {
-    private enum Editor { None, Discount, Payment }
+    private enum Editor { None, Discount, Payment, Pickup }
 
     private BookingDetail? _detail;
     private Editor _editor;
+    private DateTime _pickupDraft; // business-local wall-clock time, edited by the PickupPicker
     private string _draft = "", _error = "";
     private bool _busy, _missing, _wasOpen, _focusPending;
     private string? _loadedId;
@@ -176,6 +198,12 @@
 
     /// <summary>Tapping a booking under "Also in this order" switches the sheet to it.</summary>
     [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    /// <summary>The schedulable window (today ± 6 months) for the pickup editor.</summary>
+    [Parameter, EditorRequired] public BookingScopeState Scope { get; set; } = default!;
+
+    /// <summary>Bookings per day, for the pickup calendar's dots.</summary>
+    [Parameter] public IReadOnlyDictionary<DateOnly, int> Counts { get; set; } = new Dictionary<DateOnly, int>();
 
     protected override void OnInitialized()
     {
@@ -312,6 +340,14 @@
         _focusPending = true;
     }
 
+    private void OpenPickup()
+    {
+        if (_detail is not { } d) return;
+        _editor = Editor.Pickup;
+        _pickupDraft = Calendar.ToLocal(d.Item.PickupAt);
+        _error = "";
+    }
+
     private void CloseEditor()
     {
         _editor = Editor.None;
@@ -366,6 +402,38 @@
         }
         catch (PinRequiredException) { _error = "That PIN check expired. Try saving again."; }
         catch (ValidationException ex) { _error = ex.Message; }
+        catch (StaleStateException ex) { _error = ex.Message; }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    // ---- Pickup (Bookings PIN, 3-minute window; D35) -----------------------------
+
+    private async Task SavePickupAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+
+        // Unchanged: just close, no PIN, nothing saved.
+        if (_pickupDraft == Calendar.ToLocal(d.Item.PickupAt))
+        {
+            CloseEditor();
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var active = d.OrderItems.Where(r => r.Status != ItemStatus.Cancelled).Select(r => r.BookingId).ToList();
+            var prompt = await Pin.RequestAsync(
+                BookingPrompts.ChangePickup(active, d.Item.CustomerLabel, _pickupDraft), "Move", PinScope.Bookings);
+            if (!prompt.Confirmed) return; // cancelling the PIN leaves the editor open
+
+            await Orders.SetPickupAsync(d.Item.OrderKey, Calendar.ToUtc(_pickupDraft), prompt.Confirmation);
+            CloseEditor();
+            Toasts.Show($"Pickup moved to {BookingFormat.DateTimeShort(_pickupDraft)}", ToastDuration.Bookings);
+        }
+        catch (PinRequiredException) { _error = "That PIN check expired. Try saving again."; }
+        catch (ValidationException ex) { _error = ex.Message; await LoadAsync(); } // e.g. cooked meanwhile: the Edit link goes away
         catch (StaleStateException ex) { _error = ex.Message; }
         catch (AccessDeniedException) { }
         finally { _busy = false; }
