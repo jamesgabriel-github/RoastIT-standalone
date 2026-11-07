@@ -1,7 +1,16 @@
-# RoastIT (Roastline) — standalone app
+# RoastIT — standalone app
 
 Booking and ordering app for a lechon roasting business (Litson Haus). It runs
 offline on one shared Android phone, and all data stays on that phone.
+
+**Name:** the app is called **RoastIT** everywhere a person sees it (window and
+app title, screens, messages). It used to be "Roastline". The older name stays
+in technical identifiers that are tied to existing backups and shipped
+migrations, so **don't rename these**: the `.roastline` backup extension and
+`roastline-backup-*` file names, `Documents/Roastline/roastline-bookings-48h.csv`,
+`app_meta.app_id = 'roastline'` (import uses it to recognise backups), and the
+`roastline.themeCache` browser key. Older docs and prototypes may still say
+"Roastline"; they mean the same app.
 
 - **Stack:** .NET 10 MAUI Blazor Hybrid, EF Core SQLite, xUnit.
 - **Platforms:** Android first, then Windows. iOS comes later.
