@@ -1,6 +1,6 @@
 # RoastIT (Roastline) — Build Progress
 
-Last updated: 2026-11-07 (Phase 4 done, D33–D35 added after it, Phase 5 on hold). Read this first in a new session, then `CLAUDE.md` and
+Last updated: 2026-11-07 (Phase 4 done, D33–D35 added after it, Phase 5 in progress). Read this first in a new session, then `CLAUDE.md` and
 `docs/implementation-plan.md` (the source of truth for rules and decisions).
 
 ## Status
@@ -12,7 +12,7 @@ Last updated: 2026-11-07 (Phase 4 done, D33–D35 added after it, Phase 5 on hol
 | 2 — Menu | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported | Committed as `6657006`. Checklist kept below for reference |
 | 3 — Bookings | **Done.** Checkpoint run by the user in Visual Studio (2026-11-07), no problems reported. Committed as `242f2b0` | `AddBookingsDomain` migration, `IBusinessCalendar`, `OrderMath`, `BookingService` / `OrderService` / `DashboardService`, Bookings page with all sheets. Checklist kept below for reference |
 | 4 — Settings, backup, hardening | **Done.** Checkpoint cleared by the user (2026-11-07). Not committed yet. Checklist kept below for reference | Settings Data/CSV/Columns, export/import, automatic CSV, `PinScope.Data`, D21 indexes + scoped reads + `<Virtualize>` |
-| 5 — Release | **On hold** by the owner (2026-11-07). Not started | |
+| 5 — Release | **In progress** (resumed 2026-11-07). Repo side done; waiting on the owner for the keystore and device tests | Release build check passed, `scripts/build-release.ps1`, `CHANGELOG.md`. Checklist in "Next: Phase 5" below |
 
 Build state: Android and Windows targets build with 0 errors and
 0 warnings. 480 tests pass, 1 skipped (`dotnet test tests\RoastIT.Tests`; the skipped one is the opt-in ten-year timing).
@@ -313,7 +313,7 @@ The app starts with an empty Menu and no bookings, so first add two or three pro
 Nothing in Phase 3 was run by Claude: **please watch the Bookings page closely on the first run** (it is the biggest screen so far).
 After installing over the Phase 2 build, the `AddBookingsDomain` migration runs at start (a safety copy is saved first).
 
-1. **Date strip and calendar.** The strip starts two days before today, shows count badges, the arrows stop at ±6 months, tapping
+1. **Date strip and calendar.** The strip starts two days before today, marks days with bookings with an orange dot (D36, no count), the arrows stop at ±6 months, tapping
    the selected day clears it (All), and picking a far date in the calendar moves the strip to it (scrolled back to its start).
    Calendar: month arrows stop at the window edges, dots on days with bookings, Today / Clear date, the window caption.
 2. **New booking.** The product cards show active products only (not the inactive one). *(Phase 3 wording; since D34 the
@@ -401,16 +401,27 @@ Export now has a second button under **Export backup**: *Save to a folder…* (A
 6. Import that saved file on another install (or after clearing data) to confirm it opens.
 7. Back closes the PIN prompt, then the sheet; Home afterwards still locks the app.
 
-## Next: Phase 5 — Release is on hold (plan §14, §13 Phase 5)
+## Next: Phase 5 — Release (in progress; plan §14, §13 Phase 5)
 
-The Phase 4 checkpoint is cleared. The owner has put Phase 5 on hold, so **do not start it** until they say so.
+The owner resumed Phase 5 on 2026-11-07. Everything up to Phase 4 and D35 is committed. **D33 "Save to a folder…" is built but not
+yet run on a device** (checklist above).
 
-**Next step (start of the next session):** Phase 4 is still **uncommitted** in the working tree (and so are the date-picker and
-D31/D32 changes); commit it if the owner asks. **D33 "Save to a folder…" is built but not yet run on a device** (checklist below).
+Done by Claude (2026-11-07):
+- A Release publish (trimming on, debug-signed, to a temp folder) builds: 40 MB APK. **Not run on a device**, so whether EF Core
+  and the raw-SQLite export/import survive trimming is still unknown.
+- `scripts/build-release.ps1 -KeyStore <path>`: signed publish to `artifacts\release\`; asks for the password and never stores it.
+- `CHANGELOG.md` with a 1.0.0 entry; `.gitignore` now blocks `*.keystore` / `*.jks`.
+- Version is `1.0.0` / `ApplicationVersion 1` (first release, nothing to bump).
 
-When Phase 5 is resumed, it covers: the signing keystore (outside the repo), the signed release APK, a release build check
-(trimming can break EF Core: run the release build on the phone with real data), the upgrade test over the previous APK,
-`CHANGELOG.md`, and a Git tag.
+**Needs the owner** (Claude must not do these):
+1. Create the signing key once, **outside the repo**, and back it up (losing it means the app can never be updated):
+   `keytool -genkeypair -v -keystore D:\Keys\roastit.keystore -alias roastit -keyalg RSA -keysize 2048 -validity 10000`
+   (`keytool` isn't on this machine's PATH; it ships with the JDK that the Android workload installs.)
+2. `.\scripts\build-release.ps1 -KeyStore D:\Keys\roastit.keystore`
+3. On the shop phone: install the APK, then check on **real data**: Bookings, Menu, Dashboard, Export, Import, "Save to a folder…",
+   the CSV backup. This is the trimming check.
+4. Upgrade test: install the previous build with real data, install the new APK over it, confirm the migration runs and nothing is lost.
+5. When all pass: Claude sets the CHANGELOG date, commits, and tags `v1.0.0`.
 
 Things to keep in mind from Phase 4:
 - `android:allowBackup="false"` was already in the manifest from Phase 0 (D14); nothing to change.
