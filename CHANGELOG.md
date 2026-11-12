@@ -2,6 +2,14 @@
 
 One line per release. `ApplicationVersion` goes up by 1 each time (plan §14).
 
+## 1.2.0 (build 3) — 2026-11-12
+- **Revert status (D39):** a booking can now be moved **one step back** from the detail
+  sheet: Cooking → Pending, Cooked → Cooking, Completed → Cooked. Use it when a status was
+  advanced by mistake. It asks for the PIN (remembered for 3 minutes, same as payments and
+  cancelling). Moving Cooking back to Pending clears the "started cooking" time. Cancelled
+  bookings can't be reverted. Each revert is recorded in the history.
+- No database change: the update keeps all existing data.
+
 ## 1.1.0 (build 2) — 2026-11-12
 - **Lock (D37):** switching to another app no longer locks RoastIT, so you can take a call
   or use the camera and come back without re-entering the PIN. The app now locks when it is
