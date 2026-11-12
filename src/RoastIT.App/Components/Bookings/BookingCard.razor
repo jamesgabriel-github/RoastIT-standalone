@@ -1,5 +1,5 @@
 @* One booking as a detailed card (bookings spec §7.1). The whole card opens the detail; the advance and collapse buttons don't. *@
-<article class="bcard @(Expanded ? "expanded" : null)" role="button" tabindex="0" aria-label="@AriaLabel"
+<article class="bcard @(Expanded ? "expanded" : null) @(Cue is not null ? "late" : null)" role="button" tabindex="0" aria-label="@AriaLabel"
          @onclick="() => OnOpen.InvokeAsync(Row)" @onkeydown="OnKeyDown">
     <div class="bcard-top">
         <span class="bid">@(Row.BookingId)@if (Row.OrderTag is { } tag) {<span class="order-tag" aria-hidden="true">@tag</span>}</span>
@@ -15,6 +15,12 @@
             }
         </span>
     </div>
+
+    @if (Cue is { } cue)
+    {
+        @* Late to start (D38): shown whatever columns are on, in words as well as colour. *@
+        <div class="start-alert late"><Icon Name="alert" Size="15" /><span><b>@cue.Title</b> · @cue.Detail</span></div>
+    }
 
     @if (Columns.ShowsProductLine)
     {
@@ -55,7 +61,7 @@
     @if (ItemStatusRules.ActionLabel(Row.Status) is { } action)
     {
         <div class="bcard-actions">
-            <button type="button" class="btn btn-sm" @onclick="() => OnAdvance.InvokeAsync(Row)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"><Icon Name="check" Size="15" /> @action</button>
+            <button type="button" class="btn btn-sm @(Cue is not null ? "btn-primary" : null)" @onclick="() => OnAdvance.InvokeAsync(Row)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"><Icon Name="check" Size="15" /> @action</button>
         </div>
     }
 </article>
@@ -66,15 +72,18 @@
     [Parameter, EditorRequired] public BookingRow Row { get; set; } = default!;
     [Parameter] public BookingColumns Columns { get; set; } = BookingColumns.All;
     [Parameter] public bool Expanded { get; set; }
+
+    /// <summary>The "late to start" warning, or null (Pending bookings only, D38).</summary>
+    [Parameter] public StartCue? Cue { get; set; }
+
     [Parameter] public EventCallback<BookingRow> OnOpen { get; set; }
     [Parameter] public EventCallback<BookingRow> OnAdvance { get; set; }
     [Parameter] public EventCallback<BookingRow> OnCollapse { get; set; }
 
     private string StatusKey => Row.Status.ToString().ToLowerInvariant();
 
-    private string AriaLabel => Row.OrderCount > 1
-        ? $"Booking {Row.BookingId}, {Row.OrderPosition} of {Row.OrderCount} in this order"
-        : $"Booking {Row.BookingId}";
+    private string AriaLabel =>
+        $"Booking {Row.BookingId}{(Row.OrderCount > 1 ? $", {Row.OrderPosition} of {Row.OrderCount} in this order" : "")}{(Cue is { } cue ? $", {cue.Aria}" : "")}";
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {

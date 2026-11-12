@@ -9,6 +9,7 @@ public partial class App : Application
 {
 	private static readonly TimeSpan CsvCheckInterval = TimeSpan.FromMinutes(1);
 
+	private readonly AppForeground _foreground;
 	private readonly IAppLock _appLock;
 	private readonly IdleMonitor _idleMonitor;
 	private readonly CsvBackupService _csv;
@@ -17,9 +18,10 @@ public partial class App : Application
 	private readonly object _csvGate = new();
 	private CancellationTokenSource? _csvLoop;
 
-	public App(ThemeService theme, IAppLock appLock, IdleMonitor idleMonitor, CsvBackupService csv, ILogger<App> logger)
+	public App(ThemeService theme, IAppLock appLock, IdleMonitor idleMonitor, CsvBackupService csv, AppForeground foreground, ILogger<App> logger)
 	{
 		InitializeComponent();
+		_foreground = foreground;
 		_appLock = appLock;
 		_idleMonitor = idleMonitor;
 		_csv = csv;
@@ -51,6 +53,7 @@ public partial class App : Application
 		{
 			_idleMonitor.CheckAndLock();
 			StartCsvLoop();
+			_foreground.RaiseResumed(); // lists showing "late to start" refresh now (D38)
 		};
 		window.Destroying += (_, _) =>
 		{

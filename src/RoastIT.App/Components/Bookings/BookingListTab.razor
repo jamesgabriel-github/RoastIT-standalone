@@ -1,4 +1,7 @@
+@implements IDisposable
 @inject IBusinessCalendar Calendar
+@inject IClock Clock
+@inject AppForeground Foreground
 @inject PreferencesStore Preferences
 
 @* The Booking list tab (bookings spec §6, §7): search, status chips, view switch, sort, grouped or flat results. *@
@@ -63,11 +66,11 @@ else
         }
         else if (_compact && !_expanded.Contains(row.BookingId))
         {
-            <CompactRow @key="entry.Key" Row="row" TimeAlone="_timeAlone" OnExpand="Expand" />
+            <CompactRow @key="entry.Key" Row="row" TimeAlone="_timeAlone" Cue="CueFor(row)" OnExpand="Expand" />
         }
         else
         {
-            <BookingCard @key="entry.Key" Row="row" Columns="_columns" Expanded="_compact"
+            <BookingCard @key="entry.Key" Row="row" Columns="_columns" Expanded="_compact" Cue="CueFor(row)"
                          OnOpen="OnOpen" OnAdvance="OnAdvance" OnCollapse="Collapse" />
         }
     };
@@ -124,13 +127,27 @@ else
         }
     }
 
-    protected override void OnInitialized() => _compact = Preferences.CompactBookingList;
+    protected override void OnInitialized()
+    {
+        _compact = Preferences.CompactBookingList;
+        _ticker = new MinuteTicker(Clock, Foreground, () => InvokeAsync(StateHasChanged));
+    }
 
     protected override void OnParametersSet()
     {
         _columns = Preferences.BookingColumns;
         Refilter();
     }
+
+    // ---- "Late to start" refresh (D38) ----------------------------------------------
+    // The cues depend on the time, so the list redraws once a minute, on the minute, and when the app comes back to the
+    // front. Only this tab re-renders: the search text, open sheets and the focused card keep their state.
+
+    private MinuteTicker? _ticker;
+
+    private StartCue? CueFor(BookingRow row) => StartCue.For(row, Clock.UtcNow, Calendar);
+
+    public void Dispose() => _ticker?.Dispose();
 
     private void Refilter()
     {

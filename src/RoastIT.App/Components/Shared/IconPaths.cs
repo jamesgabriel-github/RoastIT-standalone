@@ -35,6 +35,7 @@ public static class IconPaths
         ["download"] = """<path d="M10 3v10"></path><polyline points="6,9.5 10,13.5 14,9.5"></polyline><path d="M4 16.5h12"></path>""",
         ["upload"] = """<path d="M10 14V4"></path><polyline points="6,7.5 10,3.5 14,7.5"></polyline><path d="M4 16.5h12"></path>""",
         ["warn"] = """<path d="M10 3l7.5 13h-15z"></path><line x1="10" y1="8" x2="10" y2="11.5"></line><line x1="10" y1="14" x2="10" y2="14.2"></line>""",
+        ["alert"] = """<path d="M10 3.2l7.2 12.6H2.8z"></path><line x1="10" y1="8.3" x2="10" y2="11.4"></line><line x1="10" y1="13.9" x2="10" y2="13.95"></line>""",
         ["file"] = """<path d="M5 2.5h6.5L15 6v11.5H5z"></path><polyline points="11.5,2.5 11.5,6 15,6"></polyline><line x1="7.5" y1="10" x2="12.5" y2="10"></line><line x1="7.5" y1="13" x2="12.5" y2="13"></line>""",
         // App-only (not in the prototypes): the CSV card's Share/Open button (settings spec §10 #4).
         ["share"] = """<path d="M10 12.5V3"></path><polyline points="6.5,6.5 10,3 13.5,6.5"></polyline><path d="M6 9H4.5v8h11V9H14"></path>""",

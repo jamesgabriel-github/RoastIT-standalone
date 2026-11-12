@@ -295,6 +295,22 @@
   .crow-time svg, .crow-chev { color: var(--fg-muted); flex-shrink: 0; display: flex; }
   .bcard.expanded { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
   .bcard-top-right { display: flex; align-items: center; gap: 4px; }
+  /* Late-to-start cue for PENDING bookings (see startCue): shown once the ideal start
+     (pickup − cooking time) has passed. A red left stripe + border on the card or row,
+     plus a worded line, so it never relies on colour alone. */
+  .bcard.late, .crow.late { border-color: color-mix(in srgb, var(--status-cancelled) 55%, var(--border)); box-shadow: inset 4px 0 0 var(--status-cancelled); }
+  .crow.late { background: color-mix(in srgb, var(--status-cancelled) 5%, var(--surface)); }
+  .start-alert { display: flex; align-items: flex-start; gap: 7px; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 500; line-height: 1.35; }
+  .start-alert svg { flex-shrink: 0; margin-top: 1px; }
+  .start-alert b { font-weight: 700; }
+  .start-alert.late { background: color-mix(in srgb, var(--status-cancelled) 11%, var(--surface)); color: var(--status-cancelled); }
+  .start-flag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+  .start-flag.late { background: color-mix(in srgb, var(--status-cancelled) 14%, var(--surface)); color: var(--status-cancelled); }
+  .crow .bid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Flagged compact rows: tighter gaps and no clock icon, so "ID + 1 of 2 + Late + time" fits a 360 px phone. */
+  .crow.late { gap: 8px; }
+  .crow.late .crow-time > svg { display: none; }
+  .drow .v .start-flag { margin-left: 6px; vertical-align: 1px; }
   /* "1 of 2" tag after the booking ID for multi-booking orders */
   .order-tag {
     display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
@@ -462,6 +478,14 @@
      labels stay put. Today shows a dashed "now" line and opens centred on it; other
      dates open an hour before the first busy bar. Tap a bar to read its time window
      (no hover on touch).
+   - Start-cooking cue (D38): a PENDING booking whose ideal start (pickup − cooking time, the
+     same rule as the kitchen chart) has passed gets a red stripe and a "Late to start" line on
+     its card ("Late" flag in the compact row). Nothing shows before that moment. The list
+     refreshes once a minute so the cue appears as soon as the ideal start passes.
+     The detail sheet of a PENDING booking has a "Start cooking by" row: the ideal start (also
+     before it is late), plus a red tag once it is ("Late · 20 min", "Due now", "Pickup passed").
+     Its value refreshes on the minute without redrawing the sheet. Not in the prototype or the
+     app (Q39): a grace period, a warning for a Cooking item that overruns, a "Late" filter chip.
 
    Rendering: full re-render on clicks (scroll positions preserved); typing only
    redraws the regions that depend on it, so the keyboard never closes mid-typing.
@@ -667,6 +691,7 @@
     person: '<circle cx="10" cy="7" r="3"></circle><path d="M4 16.5c0-3 2.7-5 6-5s6 2 6 5"></path>',
     sortAsc: '<line x1="10" y1="16" x2="10" y2="4"></line><polyline points="5,9 10,4 15,9"></polyline>',
     sortDesc: '<line x1="10" y1="4" x2="10" y2="16"></line><polyline points="5,11 10,16 15,11"></polyline>',
+    alert: '<path d="M10 3.2l7.2 12.6H2.8z"></path><line x1="10" y1="8.3" x2="10" y2="11.4"></line><line x1="10" y1="13.9" x2="10" y2="13.95"></line>',
     sliders: '<line x1="4" y1="6" x2="16" y2="6"></line><line x1="4" y1="14" x2="16" y2="14"></line><circle cx="8" cy="6" r="2" fill="var(--surface-2)"></circle><circle cx="13" cy="14" r="2" fill="var(--surface-2)"></circle>'
   };
 
@@ -732,6 +757,47 @@
   function orderCancellable(orderItems) {
     return orderItems.some((it) => it.status === 'pending' || it.status === 'cooking')
       && !orderItems.some((it) => it.status === 'cooked' || it.status === 'completed');
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Start-cooking cue (D38). A PENDING booking should go on the fire at its ideal start =
+  // pickup − the product's cooking time (the same ideal start the kitchen-load chart uses).
+  //   late — now is at or past the ideal start (also when the pickup itself has passed)
+  // Before the ideal start there is no cue.
+  // Other statuses never get a cue. In the real app: Core/Rules/StartCue.cs, using IClock and
+  // IBusinessCalendar; prototype "now" = the fixed TODAY + the real clock time.
+  // ---------------------------------------------------------------------------------
+  function formatSpan(min) {
+    if (min < 1440) return formatDuration(Math.max(1, min));
+    const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60);
+    return d + (d === 1 ? ' day' : ' days') + (h ? ' ' + h + ' hr' : '');
+  }
+  function dayAwareLabel(iso) { return dateOnly(iso) === TODAY ? formatTime(iso) : formatDateTime(iso); }
+  function startCue(item, order) {
+    const product = item ? PRODUCT_BY_NAME[item.product] : null;
+    if (!item || item.status !== 'pending' || !order || !order.pickupAt || !product) return null;
+    const pickupMs = localMs(order.pickupAt);
+    const startMs = pickupMs - product.cookingTimeMin * 60000;
+    const nowMs = localMs(nowOnToday());
+    const startLabel = dayAwareLabel(msToLocalIso(startMs));
+    const toStart = Math.round((startMs - nowMs) / 60000); // minutes until the ideal start (negative = late)
+    const cue = { level: '', startLabel, title: '', detail: '', flag: '', shortFlag: '', aria: '' };
+    if (toStart <= 0) {
+      cue.level = 'late'; cue.shortFlag = 'Late';
+      if (nowMs >= pickupMs) {
+        const since = Math.round((nowMs - pickupMs) / 60000);
+        cue.title = 'Not started';
+        cue.detail = 'pickup was ' + dayAwareLabel(order.pickupAt) + (since > 0 ? ' (' + formatSpan(since) + ' ago)' : ' (now)');
+        cue.flag = 'Pickup passed';
+      } else {
+        const ago = -toStart;
+        cue.title = 'Late to start';
+        cue.detail = 'was due ' + startLabel + (ago > 0 ? ' (' + formatSpan(ago) + ' ago)' : ' (now)');
+        cue.flag = ago > 0 ? 'Late · ' + formatSpan(ago) : 'Due now';
+      }
+      cue.aria = cue.title.toLowerCase() + ', ' + cue.detail;
+    }
+    return cue;
   }
 
   function defaultLineItems() { return [{ product: PRODUCT_NAMES[0], qty: 1 }]; }
@@ -1368,7 +1434,8 @@
         hasDiscount: !!(e.order && e.order.discountAmount),
         grossTotalLabel: e.order ? formatMoney(e.order.totalAmount) : '—',
         paidLabel: e.order ? formatMoney(e.order.amountPaid) : '—',
-        canAdvance: !!nextLabel, advanceTitle: nextLabel || ''
+        canAdvance: !!nextLabel, advanceTitle: nextLabel || '',
+        start: startCue(e.it, e.order)
       };
     }
 
@@ -1549,6 +1616,7 @@
         product: selectedItem.product,
         cookingTimeLabel: product ? formatDuration(product.cookingTimeMin) : '—',
         pickupLabel: order ? formatDateTime(order.pickupAt) : '—',
+        start: startCue(selectedItem, order), // pending only (D38)
         // D35: the pickup can move while the order has a pending/cooking item and nothing cooked or completed (same test as cancelling).
         canEditPickup: !!order && orderCancellable(orderItems) && !pickupEditing,
         pickupEditing, pickupDraftValue: pickupEditing ? state.pickupDraft.value : '', pickupError: pickupEditing ? state.pickupDraft.error : '',
@@ -1756,14 +1824,18 @@
         ${cols.total ? `<span><span class="muted">Order</span> <b>${r.totalLabel}</b>${r.hasDiscount ? ` <span class="was">${r.grossTotalLabel}</span>` : ''}</span>` : ''}
         ${cols.paid ? `<span><span class="muted">Paid</span> <b>${r.paidLabel}</b></span>` : ''}
       </div>` : '';
+    // Start cue (D38) shows whatever columns are chosen in Settings: it's the point of the card.
+    const s = r.start && r.start.level ? r.start : null;
+    const startAlert = s ? `<div class="start-alert ${s.level}">${icon(ICONS.alert, 15)}<span><b>${s.title}</b> · ${esc(s.detail)}</span></div>` : '';
     return `
-      <article class="bcard ${opts.expanded ? 'expanded' : ''}" data-action="open-detail" data-id="${r.id}" role="button" tabindex="0" aria-label="Booking ${r.id}${orderPartLabel(r)}">
+      <article class="bcard ${opts.expanded ? 'expanded' : ''} ${s ? s.level : ''}" data-action="open-detail" data-id="${r.id}" role="button" tabindex="0" aria-label="Booking ${r.id}${orderPartLabel(r)}${s ? ', ' + esc(s.aria) : ''}">
         <div class="bcard-top"><span class="bid">${r.id}${orderTag(r)}</span><span class="bcard-top-right">${cols.status ? pill(r.statusLabel, r.statusColor) : ''}${opts.expanded ? `<button type="button" class="collapse-btn" data-action="toggle-expand" data-id="${r.id}" aria-expanded="true" aria-label="Collapse ${r.id}">${icon(ICONS.chevUp, 16)}</button>` : ''}</span></div>
+        ${startAlert}
         ${productLine}
         ${cols.customer ? `<div class="bcard-line">${icon(ICONS.person, 15)}<span>${esc(r.customer)}</span></div>` : ''}
         ${cols.pickup ? `<div class="bcard-line">${icon(ICONS.clock, 15)}<span>${r.pickupLabel}</span></div>` : ''}
         ${money}
-        ${r.canAdvance ? `<div class="bcard-actions"><button type="button" class="btn btn-sm" data-action="request-advance" data-id="${r.id}">${icon(ICONS.check, 15)} ${r.advanceTitle}</button></div>` : ''}
+        ${r.canAdvance ? `<div class="bcard-actions"><button type="button" class="btn btn-sm ${s ? 'btn-primary' : ''}" data-action="request-advance" data-id="${r.id}">${icon(ICONS.check, 15)} ${r.advanceTitle}</button></div>` : ''}
       </article>`;
   }
 
@@ -1771,9 +1843,11 @@
   // full card (same card as the detailed view); tapping the expanded card opens the detail.
   function renderCompactRow(r, vm) {
     if (state.expanded[r.id]) return renderBookingCard(r, vm.cols, { expanded: true });
+    const s = r.start && r.start.level ? r.start : null;
     return `
-      <button type="button" class="crow" data-action="toggle-expand" data-id="${r.id}" aria-expanded="false" aria-label="Booking ${r.id}${orderPartLabel(r)}, pickup ${vm.compactTimeOnly ? r.pickupTimeLabel : r.pickupLabel}. Show details">
+      <button type="button" class="crow ${s ? s.level : ''}" data-action="toggle-expand" data-id="${r.id}" aria-expanded="false" aria-label="Booking ${r.id}${orderPartLabel(r)}, pickup ${vm.compactTimeOnly ? r.pickupTimeLabel : r.pickupLabel}${s ? ', ' + esc(s.aria) : ''}. Show details">
         <span class="bid">${r.id}${orderTag(r)}</span>
+        ${s ? `<span class="start-flag ${s.level}" aria-hidden="true">${icon(ICONS.alert, 13)}${s.shortFlag}</span>` : ''}
         <span class="crow-time">${icon(ICONS.clock, 15)}${vm.compactTimeOnly ? r.pickupTimeLabel : r.pickupLabel}</span>
         <span class="crow-chev">${icon(ICONS.chevDown, 16)}</span>
       </button>`;
@@ -1888,6 +1962,7 @@
             <p class="dsec-title">Booking</p>
             <div class="drow"><span class="k">Product</span><span class="v">${esc(d.product)}</span></div>
             <div class="drow"><span class="k">Cooking time</span><span class="v">${d.cookingTimeLabel}</span></div>
+            ${d.start ? `<div class="drow"><span class="k">Start cooking by</span><span class="v" data-region="detail-start">${renderDetailStart(d.start)}</span></div>` : ''}
             <div class="drow"><span class="k">Pickup${d.canEditPickup ? ` <button type="button" class="text-btn" data-action="open-pickup" data-order-key="${ok}">Edit</button>` : ''}</span><span class="v">${d.pickupLabel}</span></div>
             ${d.pickupEditing ? `
             <div class="inline-editor">
@@ -1912,6 +1987,11 @@
         </div>
         ${footer}
       </div>`;
+  }
+
+  // Detail sheet "Start cooking by" value (pending only): the ideal start, plus a flag when late.
+  function renderDetailStart(s) {
+    return esc(s.startLabel) + (s.level ? `<span class="start-flag ${s.level}">${esc(s.flag)}</span>` : '');
   }
 
   function renderNewSheet(vm) {
@@ -2119,6 +2199,7 @@
         switch (name) {
           case 'results': el.innerHTML = renderResults(vm); break;
           case 'count': el.textContent = vm.countLabel; break;
+          case 'detail-start': if (vm.detail && vm.detail.start) el.innerHTML = renderDetailStart(vm.detail.start); break;
           case 'new-total': el.textContent = vm.newTotalLabel; break;
           case 'new-net': el.innerHTML = renderNewNet(vm); break;
           case 'new-submit': el.textContent = renderNewSubmit(vm); break;
@@ -2253,6 +2334,22 @@
   });
 
   render();
+
+  // Start-cooking cues (D38) follow the clock: refresh them at the start of every minute.
+  // Only the list and the detail sheet's "Start cooking by" value are redrawn, so typing in
+  // search or an open editor is never disturbed; keyboard focus on a card or row is kept.
+  // Real app: a MinuteTicker (fires at the start of every minute and on Window.Resumed) in
+  // BookingListTab, and another in StartByValue for the detail sheet's "Start cooking by" value.
+  function refreshStartCues() {
+    if (document.visibilityState === 'hidden') return;
+    const a = document.activeElement;
+    const focusKey = a && a.closest && a.closest('[data-region="results"]') && a.dataset && a.dataset.id
+      ? '[data-region="results"] [data-id="' + a.dataset.id + '"][data-action="' + a.dataset.action + '"]' : null;
+    renderRegions(['results', 'detail-start']);
+    if (focusKey) { const el = appEl.querySelector(focusKey); if (el) el.focus({ preventScroll: true }); }
+  }
+  setTimeout(() => { refreshStartCues(); setInterval(refreshStartCues, 60 * 1000); }, (60 - new Date().getSeconds()) * 1000 + 50);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshStartCues(); });
 
   // Automatic CSV backup (bookings within 48 hours): check now, every minute, and when the app comes
   // back to the front (the real app uses MAUI Window.Resumed / a foreground timer).

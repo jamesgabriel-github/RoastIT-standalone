@@ -1,0 +1,26 @@
+@implements IDisposable
+@inject IClock Clock
+@inject IBusinessCalendar Calendar
+@inject AppForeground Foreground
+
+@* The detail sheet's "Start cooking by" value (D38): the ideal start, plus a red tag once it has passed. It keeps its own
+   per-minute refresh, so only this value redraws and the sheet's editors are never touched. *@
+@if (StartCue.StartByLabel(Row, Clock.UtcNow, Calendar) is { } label)
+{
+    @label
+    if (StartCue.For(Row, Clock.UtcNow, Calendar) is { } cue)
+    {
+        <span class="start-flag late">@cue.Flag</span>
+    }
+}
+
+@code {
+    private MinuteTicker? _ticker;
+
+    [Parameter, EditorRequired] public BookingRow Row { get; set; } = default!;
+
+    protected override void OnInitialized() =>
+        _ticker = new MinuteTicker(Clock, Foreground, () => InvokeAsync(StateHasChanged));
+
+    public void Dispose() => _ticker?.Dispose();
+}

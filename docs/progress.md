@@ -450,9 +450,27 @@ Things to keep in mind from Phase 4:
 - The CSV file store is Android 10+ only; Windows registers `UnsupportedCsvFileStore` (D30).
 - The release build must keep EF Core working under trimming; check export/import there too (they use raw SQLite commands).
 
+## D38 late-to-start warning on the booking list (owner's request; plan §7.5, Q39)
+
+A Pending booking whose ideal start (pickup − cooking time) has passed is flagged on the **detailed card** (red stripe and border, a
+"Late to start · was due 3:00 PM (20 min ago)" line, primary "Start cooking" button) and the **compact row** (red stripe, tint, "Late" tag).
+The Android target builds; all tests pass, 1 skipped. **Not run on a device.** Prototype: `docs/temp/bookings-prototype_late_notif.html`.
+
+- Core: `Rules/StartCue.For(row, nowUtc, calendar)` returns the cue or null (Pending only; late from the exact ideal start, in whole
+  minutes; "Not started" once the pickup has passed). `DurationFormat.Span` writes "45 min / 2 hr 28 min / 1 day 3 hr".
+- App: `BookingCard` and `CompactRow` take a `Cue`; `BookingListTab` works it out at render time from `IClock` and redraws on the minute
+  and on `AppForeground.Resumed` (raised from `Window.Resumed`). New `alert` icon and `.start-alert` / `.start-flag` / `.late` CSS.
+- **Deviation:** the doc says `BookingRow` carries the cue; it is computed at render instead, because a loaded row never changes
+  but the clock does.
+- Detail sheet: a "Start cooking by" row for Pending bookings (`StartByValue`, own per-minute refresh, so editors are never redrawn). `StartCue.StartByLabel` and `StartCue.Flag` ("Late · 20 min" / "Due now" / "Pickup passed") produce the text. `MinuteTicker` (shared by the list and this row) fires on the minute and on `AppForeground.Resumed`.
+- **Still not built (Q39):** a grace period, a warning for a Cooking item that runs past its cooking time, and a "Late" filter chip or sort.
+- Tests: `StartCueTests` (exact start, 1 minute before, pickup passed, other statuses, other-day dates, Manila midnight, and the detail sheet's start-by text and tag). 499 pass, 1 skipped.
+- Check on the phone: a Pending booking past its ideal start shows the red card; at 360 px the compact row fits; going to another
+  app and back updates it; "Start cooking" clears it.
+
 ## Working agreements (from CLAUDE.md, repeated because they matter)
 
 Build phase by phase and finish each checkpoint. Check the decision log before changing behaviour;
-changes get a new `D` row, new questions get the next `Q` number (next free: Q39 / D35). Add tests
+changes get a new `D` row, new questions get the next `Q` number (next free: Q40 / D39). Add tests
 for every rule touched, with real SQLite. Money is `long` centavos; times are UTC `DateTime`,
 "today" comes from `IBusinessCalendar` (Asia/Manila). Never log the PIN, its hash or the recovery code.

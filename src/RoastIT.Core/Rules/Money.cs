@@ -59,4 +59,14 @@ public static class DurationFormat
         var rest = minutes % 60;
         return rest == 0 ? $"{hours} hr" : $"{hours} hr {rest} min";
     }
+
+    /// <summary>How long ago something was: "45 min", "2 hr 28 min", "1 day 3 hr", "2 days" (a day or more drops the minutes).</summary>
+    public static string Span(int minutes)
+    {
+        if (minutes < 1440) return Format(Math.Max(1, minutes));
+        var days = minutes / 1440;
+        var hours = minutes % 1440 / 60;
+        var dayText = days == 1 ? "1 day" : $"{days} days";
+        return hours == 0 ? dayText : $"{dayText} {hours} hr";
+    }
 }

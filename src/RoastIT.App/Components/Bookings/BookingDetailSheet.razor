@@ -30,6 +30,10 @@
                 <div class="drow"><span class="k">Product</span><span class="v">@item.ProductName</span></div>
                 <div class="drow"><span class="k">Weight</span><span class="v">@Weight.Format(item.WeightGrams)</span></div>
                 <div class="drow"><span class="k">Cooking time</span><span class="v">@DurationFormat.Format(item.CookingTimeMin)</span></div>
+                @if (item.Status == ItemStatus.Pending)
+                {
+                    <div class="drow"><span class="k">Start cooking by</span><span class="v"><StartByValue Row="item" /></span></div>
+                }
                 <div class="drow">
                     <span class="k">
                         Pickup

@@ -515,6 +515,42 @@ public static class OrderMath
     the day is already clear; otherwise it's date + time. Tap a row to
     expand it into the full card, tap the card to open the detail, and
     use the arrow to collapse.
+- **Late to start (D38):** flags a **Pending** booking that should already be
+  cooking, so the kitchen sees it at a glance.
+  - **Ideal start = pickup − the product's cooking time**, the same rule as
+    the Kitchen load chart. The warning appears **at the ideal start, to the
+    minute, and not before**. There is no "starting soon" state. Cooking,
+    Cooked, Completed and Cancelled bookings are never flagged.
+  - **Detailed card:** red left stripe and border, a red line under the
+    booking ID, and the "Start cooking" button turns primary. **Compact row:**
+    red stripe, light red tint and a "⚠ Late" tag before the time (the clock
+    icon is dropped so it fits a 360 px phone). The warning shows whichever
+    fields are on in Settings → "Columns to show".
+  - **Wording** (times on another day include the date, "Oct 8 · 2:15 PM";
+    durations read "45 min", "2 hr 28 min", "1 day 3 hr"):
+
+    | Situation | Card line |
+    |---|---|
+    | Past the ideal start, before pickup | **Late to start** · was due 3:00 PM (20 min ago) |
+    | Exactly at the ideal start | **Late to start** · was due 3:00 PM (now) |
+    | Pickup time has also passed | **Not started** · pickup was 10:00 AM (5 hr ago) |
+
+  - **Accessibility:** the wording is part of the card's or row's accessible
+    label ("Booking 261009-001, late to start, was due 3:00 PM (20 min ago)"),
+    and the alert icon is always shown, so it never relies on colour alone.
+  - **Detail sheet:** a Pending booking has a "Start cooking by" row with the
+    ideal start (shown before it is late too) and a red tag once it is
+    ("Late · 20 min", "Due now", "Pickup passed"). It refreshes on its own so
+    the sheet's editors are never redrawn.
+  - **Where it's computed:** `Core/Rules/StartCue` from `IClock` and
+    `IBusinessCalendar` (Asia/Manila), at render time. Nothing is stored. The
+    list redraws **once a minute, on the minute**, and on `Window.Resumed`;
+    only the Booking list tab redraws, so typing in search or an open sheet
+    is never interrupted. Tapping "Start cooking" moves the booking to
+    Cooking, which clears the warning.
+  - **Not included (Q39):** a grace period after the ideal start, a warning
+    for a Cooking item that runs past its cooking time, and a "Late" filter
+    chip or sort.
 
 ### 7.6 Dashboard (scoped to the selected date or all dates, i.e. today ± 6 months, D32)
 
@@ -533,7 +569,7 @@ public static class OrderMath
   - **Cooking item:** occupies `[started_cooking_at, + cooking time)`.
   - **Pending item:** occupies `[pickup − cooking time, pickup)`. If that
     start time has already passed, it occupies `[now, now + cooking
-    time)` instead, because it's running late.
+    time)` instead, because it's running late (the same ideal start as the late-to-start warning, D38).
   - **Chart:** add +1 at each start and −1 at each end, sort the times,
     and keep a running total. Each step between two times is one bar,
     and its height is how many items are cooking then.
@@ -777,6 +813,9 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
   switch and a Sort button. In Detailed view, cards show Booking ID
   (always) plus the fields chosen in Settings, and a quick-advance button
   (with confirm) when there's a next status.
+  A Pending booking past its ideal start shows the late-to-start warning
+  (§7.5, D38): red stripe and a worded line on the card, a "Late" tag on the
+  compact row.
 - **Detail sheet**
   - **Header:** back, booking ID, status pill.
   - **Booking:** product, weight, cooking time, pickup. The pickup row has
@@ -785,6 +824,9 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
     with Cancel / Save pickup. It shows only while nothing in the order is
     cooked or completed (and the order isn't cancelled). Saving asks for
     the Bookings PIN (§9.5).
+  - **Start cooking by** (Pending bookings only, D38): the ideal start, with a
+    red tag when it has passed ("Late · 20 min", "Due now", or "Pickup
+    passed"). Its value refreshes every minute. The tag and value are computed by `StartCue`.
   - **Customer:** name, and phone as a `tel:` link (or "Not on file").
   - **Payment:**
     1. total
@@ -1072,6 +1114,8 @@ with `Data Source=:memory:` kept open, or a temp file):
 - Write-off: uses current values, and is offered only when the balance is
   under 10%.
 - Kitchen load: interval rules, including late pending items.
+- Late-to-start cue (D38), with a fake `IClock`: late exactly at the ideal start, no cue 1 minute (or 1 second) before, "Not started"
+  once the pickup has passed, no cue for any status but Pending, dates shown for another day, correct across Manila midnight.
 - Schedule window: dates outside ±6 months are rejected.
 - **App lock:**
   - setup, unlock, change and recovery reset (old code invalid afterwards)
@@ -1296,6 +1340,7 @@ The output is `com.roastit.app-Signed.apk` under
 | Q35 | Import: **safety copies and a cut-off swap** | **Implemented:** the newest **3** `roastit.db3.bak-before-import-*` copies are kept. The swap writes a marker first; if the app dies before the marker is removed, the next start puts the safety copy back. That includes the rare case where the new file was already in place, so that import has to be done again | 2026-11-07 |
 | Q37 | Settings: **where export/import errors show.** The spec says an error toast, but toasts are hidden while a bottom sheet is open (shared-ui-spec) | **Implemented: an inline error line in the open sheet** (`role="alert"`), and the sheet stays open | 2026-11-07 |
 | Q38 | Weights (D34): the choices the owner didn't specify | **Implemented:** the product's price means **per kilo** (the form shows "₱2,200/kg"); a weight takes **up to 2 decimals** (0.01 kg steps) and must be **0.01 – 500 kg**; the − / + buttons move by **0.5 kg** (− stops at 0.5); the weight field starts **blank** and a blank or invalid one shows "Enter a weight between 0.01 and 500 kg for every item." instead of being dropped; each line's price is rounded to the nearest centavo; the weight can't be edited after booking (no edit feature exists for bookings); the Dashboard's counts (Product mix, kitchen load) still count **bookings, not kilos**; bookings made before D34 count as **1 kg** each. Alternative: price per piece with a separate kilo field, or a count of kilos on the Dashboard | 2026-11-07 |
+| Q39 | Late-to-start warning (D38): the choices the owner didn't specify | **Implemented:** no grace period (the warning shows at the ideal start, to the minute); a **Cooking** item that runs past its cooking time gets no warning; there is **no "Late" filter chip or sort**; the list redraws once a minute and when the app returns to the front; the detail sheet's "Start cooking by" row is built (Pending only; it shows the ideal start even before it is late, with a tag of "Late · 20 min", "Due now" or "Pickup passed"); the list and that row each refresh on the minute and on resume, and the cue is to the whole minute (nothing at 2:59:59, shown at 3:00:00). Alternatives: a grace period, an overdue-cooking warning, a Late chip | 2026-11-12 |
 
 ### 15.2 Decision log
 
@@ -1338,6 +1383,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D35 | **A booking's pickup time can be changed** (owner's request). The pickup lives on the order, so one change moves every booking in it; booking IDs don't change (they come from the order date). Needs a **Bookings PIN confirmation (3-minute window)**. Allowed while the order is not cancelled and has no Cooked or Completed item (the same test as cancelling); a Cooking item is fine and keeps its `started_cooking_at`. The new time must be inside the D32 window; a time already past is allowed (the picker warns). Audited as `order.pickup_changed`. Raises `OrderChanged` and `BookingsChanged` for the old and the new date. *(Adds to D7.)* | 2026-11-07 | §7.3, §9.5, bookings spec §8, §12 |
 | D36 | **The date strip marks days with bookings with an orange dot, not a count** (owner's request), the same dot the calendar sheet already uses: 5 px, accent, at the bottom of the tile (white on the selected tile), hidden when the day has no bookings. The tile's accessible label still carries the count (*..., 3 bookings*). *(Replaces the count badge in the Phase 3 date strip.)* | 2026-11-08 | §9.5, bookings spec §3 |
 | D37 | **Switching to another app no longer locks; the app locks when it is closed or after 30 minutes idle** (owner's request). Leaving the foreground (Home, app switcher, a call, the file picker or a share sheet) does nothing to the lock. The app locks when its window is destroyed (closed with Back or swiped away; a killed process always starts locked), and after **30 minutes** without taps. Time spent in another app counts as idle time, and coming back checks it straight away. *(Replaces D6's "every reopen" and "10 minutes"; this also retires `ExternalActivityGuard` from Q11, which is no longer needed.)* | 2026-11-12 | §9.4 |
+| D38 | **A Pending booking that should already be cooking is flagged "late to start"** (owner's request). The ideal start is pickup − the product's cooking time (the Kitchen load chart's rule). Nothing shows before it; from then on the detailed card gets a red stripe, a worded "Late to start · was due 3:00 PM (20 min ago)" line and a primary "Start cooking" button, and the compact row a red stripe and a "Late" tag. Once the pickup itself has passed the wording is "Not started · pickup was … (… ago)". Only Pending bookings are flagged; "Start cooking" clears it. Assumptions in Q39 | 2026-11-12 | §7.5, §10.3, §12 |
 
 ---
 

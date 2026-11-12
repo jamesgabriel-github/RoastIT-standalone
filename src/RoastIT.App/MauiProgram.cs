@@ -72,6 +72,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ThemeService>();
 		builder.Services.AddSingleton<BackNavigationService>();
 		builder.Services.AddSingleton<ToastService>();
+		builder.Services.AddSingleton<AppForeground>();
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();

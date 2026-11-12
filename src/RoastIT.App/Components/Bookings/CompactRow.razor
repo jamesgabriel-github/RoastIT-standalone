@@ -1,6 +1,11 @@
 @* One booking as a compact row: ID and pickup time only. Tapping expands it into the full card (bookings spec §7.2). *@
-<button type="button" class="crow" aria-expanded="false" aria-label="@AriaLabel" @onclick="() => OnExpand.InvokeAsync(Row)">
+<button type="button" class="crow @(Cue is not null ? "late" : null)" aria-expanded="false" aria-label="@AriaLabel" @onclick="() => OnExpand.InvokeAsync(Row)">
     <span class="bid">@(Row.BookingId)@if (Row.OrderTag is { } tag) {<span class="order-tag" aria-hidden="true">@tag</span>}</span>
+    @if (Cue is { } cue)
+    {
+        @* Late to start (D38). The clock icon is dropped (CSS) so "ID + 1 of 2 + Late + time" fits a 360 px phone. *@
+        <span class="start-flag late" aria-hidden="true"><Icon Name="alert" Size="13" />@cue.ShortFlag</span>
+    }
     <span class="crow-time"><Icon Name="clock" Size="15" />@TimeText</span>
     <span class="crow-chev"><Icon Name="chevDown" Size="16" /></span>
 </button>
@@ -12,6 +17,9 @@
 
     /// <summary>True when the day is already clear (grouped view or a date is selected): show the time alone.</summary>
     [Parameter] public bool TimeAlone { get; set; }
+
+    /// <summary>The "late to start" warning, or null (Pending bookings only, D38).</summary>
+    [Parameter] public StartCue? Cue { get; set; }
 
     [Parameter] public EventCallback<BookingRow> OnExpand { get; set; }
 
@@ -25,5 +33,5 @@
     }
 
     private string AriaLabel =>
-        $"Booking {Row.BookingId}{(Row.OrderCount > 1 ? $", {Row.OrderPosition} of {Row.OrderCount} in this order" : "")}, pickup {TimeText}. Show details";
+        $"Booking {Row.BookingId}{(Row.OrderCount > 1 ? $", {Row.OrderPosition} of {Row.OrderCount} in this order" : "")}, pickup {TimeText}{(Cue is { } cue ? $", {cue.Aria}" : "")}. Show details";
 }

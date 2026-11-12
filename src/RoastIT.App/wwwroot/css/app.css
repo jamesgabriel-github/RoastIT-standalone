@@ -464,6 +464,19 @@ button.set-row[disabled] { opacity: 0.6; cursor: default; }
 .crow-time svg, .crow-chev { color: var(--fg-muted); flex-shrink: 0; display: flex; }
 .bcard.expanded { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .bcard-top-right { display: flex; align-items: center; gap: 4px; }
+/* Late-to-start cue for Pending bookings (D38): a red left stripe and border plus a worded line, so it never relies on colour alone. */
+.bcard.late, .crow.late { border-color: color-mix(in srgb, var(--status-cancelled) 55%, var(--border)); box-shadow: inset 4px 0 0 var(--status-cancelled); }
+.crow.late { background: color-mix(in srgb, var(--status-cancelled) 5%, var(--surface)); }
+.start-alert { display: flex; align-items: flex-start; gap: 7px; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 500; line-height: 1.35; }
+.start-alert svg { flex-shrink: 0; margin-top: 1px; }
+.start-alert b { font-weight: 700; }
+.start-alert.late { background: color-mix(in srgb, var(--status-cancelled) 11%, var(--surface)); color: var(--status-cancelled); }
+.start-flag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.start-flag.late { background: color-mix(in srgb, var(--status-cancelled) 14%, var(--surface)); color: var(--status-cancelled); }
+.crow .bid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Flagged compact rows: tighter gaps and no clock icon, so "ID + 1 of 2 + Late + time" fits a 360 px phone. */
+.crow.late { gap: 8px; }
+.crow.late .crow-time > svg { display: none; }
 /* "1 of 2" tag after the booking ID for multi-booking orders */
 .order-tag {
   display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
@@ -481,6 +494,7 @@ button.set-row[disabled] { opacity: 0.6; cursor: default; }
 .drow:first-of-type { border-top: none; }
 .drow .k { color: var(--fg-muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .drow .v { font-weight: 600; text-align: right; }
+.drow .v .start-flag { margin-left: 6px; vertical-align: 1px; }
 .drow.big { font-size: 16px; }
 .tel { color: var(--accent); font-weight: 600; text-decoration: none; }
 .link-row { display: flex; justify-content: flex-end; margin-top: -4px; }

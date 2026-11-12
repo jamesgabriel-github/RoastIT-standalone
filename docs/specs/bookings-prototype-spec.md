@@ -8,7 +8,7 @@ Dashboard, booking detail and new booking.
 | Route | `/bookings` (default after unlock) |
 | Layout | `MainLayout`, nav item **Bookings** active |
 | Services | `BookingService`, `OrderService`, `DashboardService`, `IBusinessCalendar`, `IChangeNotifier`, `PinPromptService` |
-| Rules | Plan §7.1–§7.6, §9.5; decisions D7, D8, D11, D22, D23, D36 |
+| Rules | Plan §7.1–§7.6, §9.5; decisions D7, D8, D11, D22, D23, D36, D38 |
 | Shared UI | `shared-ui-spec.md` |
 | Older behavior notes | `bookings-page-spec.md` (ignore its desktop layout) |
 | Build phase | Phase 3 (columns and list-view preference wired in Phase 4) |
@@ -67,6 +67,11 @@ created dialog is open.
   `CatalogChanged`).
 - Re-query the list, the counts and the Dashboard after any change, so an
   edit in the detail sheet updates the cards and KPIs behind it.
+- **Late-to-start cues (§7.5) follow the clock.** The Booking list redraws
+  once a minute, on the minute, and when the app comes back to the front
+  (`Window.Resumed`). Only the list (and the detail sheet's *Start cooking
+  by* value, §8.1) is redrawn, so typing in search or an open editor is never
+  interrupted and keyboard focus on a card or row is kept.
 
 ---
 
@@ -233,11 +238,14 @@ Changing the field keeps the direction.
 Card radius 14, padding 12 × 14, 6 px gap, pressed `--surface-2`. The
 whole card is a button: tap, Enter or Space opens the detail. Label
 *Booking 261009-001*, plus *, 1 of 2 in this order* when the order has
-more than one booking.
+more than one booking. When the booking is late to start (§7.5) the label
+ends with the cue, e.g. *Booking 261009-001, late to start, was due 3:00 PM
+(20 min ago)*.
 
 | Line | Content | Controlled by |
 |---|---|---|
 | Top | Booking ID (mono 13 px, muted) + order tag (below) · status pill on the right | Pill: **Status** column |
+| Late cue | Alert icon + **Late to start** · was due 3:00 PM (20 min ago), red on a light red box (§7.5). Only on a late Pending booking | Always shown when late, whatever the columns |
 | Product | Product (15 px bold) · cooking time (13 px muted, *· 2 hr*) | **Product**, **Cooking time** (line hidden if both off) |
 | Customer | Person icon + customer label (ellipsis) | **Customer** |
 | Pickup | Clock icon + *Oct 9 · 5:00 PM* | **Pickup** |
@@ -245,7 +253,9 @@ more than one booking.
 | Actions | Divider, then one small full-width button: check icon + **Start cooking** / **Mark cooked** / **Mark completed** | Shown when the item has a next status |
 
 Booking ID and the order tag always show. The quick-advance button
-doesn't open the detail (the tap is handled by the button).
+doesn't open the detail (the tap is handled by the button). On a late
+booking the button is **primary** and the card gets the red stripe and
+border (§7.5).
 
 **Money is per order, not per booking.** Every booking in an order shows
 the same *Order* and *Paid* figures, so the cards of one order must not
@@ -278,7 +288,14 @@ are shared.
   - Otherwise *Oct 9 · 5:00 PM*.
 - Label: *Booking 261009-001, pickup 5:00 PM. Show details*; with the
   order tag *Booking 261009-001, 1 of 2 in this order, pickup 5:00 PM.
-  Show details*.
+  Show details*. A late booking adds the cue before *Show details*: *…,
+  pickup 5:00 PM, late to start, was due 3:00 PM (20 min ago). Show
+  details*.
+- **Late to start (§7.5):** the row gets a red left stripe, border and a
+  light red tint, and a **⚠ Late** tag (pill, 11.5 px bold) between the
+  booking ID and the time. The gap tightens to 8 px and the **clock icon is
+  hidden** so *ID + 1 of 2 + Late + time* fits a 360 px phone; the ID
+  truncates with an ellipsis if it still doesn't.
 - **Tap:** the row turns into the full detailed card (§7.1) in place,
   with:
   - an accent-tinted border
@@ -312,6 +329,55 @@ From a list card only:
 - If the item moved on meanwhile (`StaleStateException`): toast the
   error and refresh.
 
+### 7.5 Late to start (D38)
+
+Flags a **Pending** booking that should already be cooking, so the kitchen
+sees it at a glance.
+
+**Rule** (`Core/Rules/StartCue`, from `IClock` and `IBusinessCalendar`)
+
+- **Ideal start = pickup − the product's cooking time.** This is the same
+  start the Kitchen load chart uses for a pending item (§11.1).
+- The warning appears **at the ideal start**, to the minute, and not before
+  (no "starting soon" state). *Lechon Belly (2 hr), pickup 5:00 PM → ideal
+  start 3:00 PM: nothing at 2:59 PM, the warning at 3:00 PM.*
+- Only **Pending** bookings are flagged. Cooking, Cooked, Completed and
+  Cancelled never are.
+- Computed when the list renders and never stored. Tapping **Start
+  cooking** moves the booking to Cooking, so the warning goes away.
+
+**Look**
+
+| Place | What changes |
+|---|---|
+| Detailed card (§7.1) | Red left stripe (4 px) and border, a **cue line** under the top row, and the **Start cooking** button turns primary |
+| Compact row (§7.2) | Red left stripe, border and tint, a **⚠ Late** tag before the time, no clock icon |
+| Detail sheet (§8.1) | A *Start cooking by* row with the ideal start and a red tag when late |
+
+- Colour is `--status-cancelled` (stripe, tint and text). The cue line is a
+  box with an 11% red fill, radius 10, padding 7 × 10, 12.5 px text with the
+  title in bold, and the alert icon (15 px) at its left.
+- The cue shows **whatever columns are on** in Settings.
+- The alert icon and the wording are always shown, and the wording is in the
+  card's or row's accessible label, so the warning never depends on colour.
+
+**Wording**
+
+| Situation | Card line | Detail sheet tag |
+|---|---|---|
+| Past the ideal start, before pickup | **Late to start** · was due 3:00 PM (20 min ago) | Late · 20 min |
+| Exactly at the ideal start | **Late to start** · was due 3:00 PM (now) | Due now |
+| Pickup time has also passed | **Not started** · pickup was 10:00 AM (5 hr ago) | Pickup passed |
+
+- A time on another day includes the date: *Oct 8 · 2:15 PM*.
+- Durations read *45 min*, *2 hr 28 min*, *1 day 3 hr* (a day or more drops
+  the minutes), and *now* when it has just started.
+- The compact row's tag always reads **Late**.
+
+**Not included** (open, Q39): a grace period after the ideal start, a
+warning for a **Cooking** item that runs past its cooking time, and a *Late*
+filter chip or sort.
+
 ---
 
 ## 8. Booking detail (full sheet)
@@ -328,6 +394,10 @@ padding, divider between):
 
 - Product
 - Cooking time
+- **Start cooking by** (Pending bookings only, D38): the ideal start (§7.5),
+  e.g. *3:00 PM*, with a red tag after it when it has passed (*Late · 20
+  min*, *Due now* or *Pickup passed*). Refreshes every minute without
+  redrawing the sheet.
 - Pickup (*Oct 9 · 5:00 PM*), with a small **Edit** link (D35). It opens an inline editor under the row: the New booking
   pickup picker, the caption "Moves every booking in this order. Booking IDs stay the same.", **Cancel** and **Save pickup**.
   The link is hidden on a cancelled order and once any booking in the order is Cooked or Completed. Save asks for the Bookings
@@ -630,6 +700,9 @@ business-time minute axis.
 | Pending, on time | pickup − cooking minutes | pickup |
 | Pending, late (ideal start < now) | now | now + cooking minutes |
 
+The ideal start here (pickup − cooking minutes) is the same one the
+late-to-start warning uses (§7.5).
+
 - End is at least start + 1 minute.
 - Event map: +1 at each start, −1 at each end. Sort the times and keep a
   running total.
@@ -782,6 +855,10 @@ business-time minute axis.
 9. **Status advance from a stale card.** The prototype has no
    `expectedStatus` check. The app must use it (plan §7.3) and show a
    toast when it refuses.
+10. **Late-to-start gaps (Q39).** No grace period after the ideal start, no
+    warning for a Cooking item that runs past its cooking time, and no
+    *Late* filter chip or sort. (Implemented as specified in §7.5, §8.1.
+    The cue is to the whole minute: nothing at 2:59:59, the cue at 3:00:00.)
 
 ---
 
@@ -812,9 +889,22 @@ business-time minute axis.
       the Settings columns are labelled *Order total* / *Order paid*.
 - [ ] Card advance asks for confirmation; detail advance doesn't.
 - [ ] Pending → Cooking stamps the start time.
+- [ ] A Pending booking shows nothing one minute before its ideal start
+      (pickup − cooking time) and the late cue at the ideal start: red
+      stripe and cue line on the card, *Late* tag on the compact row.
+- [ ] After the pickup time passes the wording becomes *Not started*.
+- [ ] Cooking, Cooked, Completed and Cancelled bookings never show the cue.
+- [ ] The cue appears without a manual refresh (on the minute, and when
+      the app returns to the front), without closing the keyboard or an
+      open sheet.
+- [ ] A late compact row fits a 360 px phone with *1 of 2*, *Late* and a
+      date + time; the cue is also in the screen-reader label.
+- [ ] Start cooking clears the cue.
 
 **Detail sheet**
 
+- [ ] *Start cooking by* shows for Pending bookings only, with *Late · N
+      min*, *Due now* or *Pickup passed* once it applies.
 - [ ] Payment rows show and hide exactly per §8.3; only one editor at a
       time.
 - [ ] A ₱0 payment closes without a PIN.
