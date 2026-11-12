@@ -95,9 +95,11 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 - The discount is clamped to `[0, total]`, and payments are always additive.
 
 **Status**
-- Forward only, one step at a time: Pending → Cooking → Cooked → Completed.
+- Forward one step at a time: Pending → Cooking → Cooked → Completed.
 - The move to Cooking stamps `started_cooking_at`.
 - `AdvanceStatusAsync` checks `expectedStatus`.
+- **Revert (D39):** `OrderService.RevertStatusAsync` goes one step back from Cooking, Cooked or Completed (detail sheet
+  only). Cancelled can't be reverted. Cooking → Pending clears `started_cooking_at`. Bookings PIN, 3-minute window.
 
 **Cancelling**
 - Cancelling always cancels the **whole order**.
@@ -114,7 +116,7 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 |---|---|
 | Menu add / edit / activate / deactivate | Every time (single-use confirmation) |
 | Settings Export / Import | Every time (`PinScope.Data`, single-use) |
-| Bookings record payment, "Discount remaining balance", cancel order, change pickup time | Remembered for **3 minutes**; the window is cleared on lock |
+| Bookings record payment, "Discount remaining balance", cancel order, change pickup time, revert status | Remembered for **3 minutes**; the window is cleared on lock |
 | Create booking, manual discount, advance status | Not asked |
 
 **App lock**

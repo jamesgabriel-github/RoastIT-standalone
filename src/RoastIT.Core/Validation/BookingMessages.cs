@@ -25,6 +25,7 @@ public static class BookingMessages
     public const string PaymentTooSmall = "Enter an amount greater than 0.";
     public const string NothingToWaive = "There's no small balance left to waive.";
     public const string CantAdvance = "That booking can't move forward any more.";
+    public const string CantRevert = "That booking can't go back a step.";
 
     /// <summary>Toast after the PIN, when the order changed meanwhile (bookings spec §8.6).</summary>
     public const string CantCancelToast = "Can't cancel — part of this order is already cooked or completed.";

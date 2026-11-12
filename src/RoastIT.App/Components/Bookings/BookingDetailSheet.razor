@@ -27,6 +27,16 @@
 
             <section class="card">
                 <p class="dsec-title">Booking</p>
+                <div class="drow">
+                    <span class="k">
+                        Status
+                        @if (ItemStatusRules.Previous(item.Status) is { } back)
+                        {
+                            <button type="button" class="text-btn" disabled="@_busy" @onclick="RevertAsync"><Icon Name="undo" Size="13" /> Revert to @ItemStatusRules.Label(back)</button>
+                        }
+                    </span>
+                    <span class="v"><StatusPill Kind="@StatusKey(item.Status)" Label="@ItemStatusRules.Label(item.Status)" /></span>
+                </div>
                 <div class="drow"><span class="k">Product</span><span class="v">@item.ProductName</span></div>
                 <div class="drow"><span class="k">Weight</span><span class="v">@Weight.Format(item.WeightGrams)</span></div>
                 <div class="drow"><span class="k">Cooking time</span><span class="v">@DurationFormat.Format(item.CookingTimeMin)</span></div>
@@ -320,6 +330,31 @@
         }
         catch (StaleStateException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); }
         catch (ValidationException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); }
+        catch (AccessDeniedException) { }
+        finally { _busy = false; }
+    }
+
+    // ---- Revert one step (Bookings PIN, 3-minute window; D39) -----------------------
+
+    private async Task RevertAsync()
+    {
+        if (_detail is not { } d || _busy) return;
+        var item = d.Item;
+        if (ItemStatusRules.Previous(item.Status) is not { } back) return;
+        _busy = true;
+        try
+        {
+            var startLocal = item.StartedCookingAt is { } started ? Calendar.ToLocal(started) : (DateTime?)null;
+            var prompt = await Pin.RequestAsync(
+                BookingPrompts.RevertStatus(item.BookingId, item.ProductName, item.Status, back, startLocal), "Revert", PinScope.Bookings);
+            if (!prompt.Confirmed) return;
+
+            var status = await Orders.RevertStatusAsync(item.BookingId, item.Status, prompt.Confirmation);
+            Toasts.Show(BookingPrompts.Reverted(item.BookingId, status), ToastDuration.Bookings);
+        }
+        catch (PinRequiredException) { Toasts.Show("That PIN check expired. Try again.", ToastDuration.Bookings); }
+        catch (ValidationException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); }
+        catch (StaleStateException ex) { Toasts.Show(ex.Message, ToastDuration.Bookings); await LoadAsync(); } // changed meanwhile: nothing reverted
         catch (AccessDeniedException) { }
         finally { _busy = false; }
     }

@@ -1,3 +1,5 @@
+using RoastIT.Core.Enums;
+
 namespace RoastIT.Core.Rules;
 
 /// <summary>The one-line summaries shown in the Bookings PIN prompt (shared-ui-spec §7.3).</summary>
@@ -28,4 +30,20 @@ public static class BookingPrompts
     /// <summary>The toast after a cancel: "261009-003 cancelled" or "Order cancelled · 2 bookings".</summary>
     public static string Cancelled(IReadOnlyList<string> cancelledIds) =>
         cancelledIds.Count == 1 ? $"{cancelledIds[0]} cancelled" : $"Order cancelled · {cancelledIds.Count} bookings";
+
+    /// <summary>
+    /// "Move 261008-001 (Lechon Chicken) back from Cooking to Pending. Its cooking start time (Oct 8 · 5:30 PM) will be
+    /// cleared." The second sentence only when the start time is cleared (Cooking → Pending);
+    /// <paramref name="cookingStartLocal"/> is business time.
+    /// </summary>
+    public static string RevertStatus(string bookingId, string product, ItemStatus from, ItemStatus to, DateTime? cookingStartLocal)
+    {
+        var text = $"Move {bookingId} ({product}) back from {ItemStatusRules.Label(from)} to {ItemStatusRules.Label(to)}.";
+        return to == ItemStatus.Pending && cookingStartLocal is { } start
+            ? $"{text} Its cooking start time ({BookingFormat.DateTimeShort(start)}) will be cleared."
+            : text;
+    }
+
+    /// <summary>The toast after a revert: "261008-001 reverted to Pending".</summary>
+    public static string Reverted(string bookingId, ItemStatus to) => $"{bookingId} reverted to {ItemStatusRules.Label(to)}";
 }

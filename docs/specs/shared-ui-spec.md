@@ -241,8 +241,8 @@ Body padding 8 × 20 (+ safe-bottom), column with 14 px gap:
    20 px accent icon.
 2. Title **Enter your PIN to continue** (18 px bold).
 3. Detail line (13.5 px muted, max width 300) — the action summary (§7.3).
-4. **Bookings scope only:** second line, 12 px: *Payments, write-offs and
-   cancellations won't ask again for 3 minutes.*
+4. **Bookings scope only:** second line, 12 px: *Payments, write-offs,
+   pickup changes, cancellations and status reverts won't ask again for 3 minutes.*
 5. Dots row (height 22, 14 px gap): one 13 px `--fg` dot per digit, or
    the muted hint *Enter your PIN* when empty. `aria-live="polite"`.
 6. Message line (min height 18, 13 px / 600, cancelled color,

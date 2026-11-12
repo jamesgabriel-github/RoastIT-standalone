@@ -468,9 +468,29 @@ The Android target builds; all tests pass, 1 skipped. **Not run on a device.** P
 - Check on the phone: a Pending booking past its ideal start shows the red card; at 360 px the compact row fits; going to another
   app and back updates it; "Start cooking" clears it.
 
+## D39 revert a booking's status (owner's request; plan §7.3)
+
+A booking can go **one step back** from Cooking, Cooked or Completed (Cooking → Pending, Cooked → Cooking, Completed → Cooked).
+**Cancelled can't be reverted.** The Android target builds; all tests pass (518, 1 skipped). **Not run on a device.**
+Prototype: `docs/prototypes/bookings-prototype.html` (from `docs/temp/bookings-prototype_revert_status.html`, which can be deleted).
+
+- Core: `ItemStatusRules.Previous`, `OrderService.RevertStatusAsync(bookingId, expectedStatus, confirmation)` (unlocked + Bookings PIN,
+  stale-status check inside the transaction, audit `item.status_reverted`, `OrderChanged` + `BookingsChanged` after the save),
+  `BookingPrompts.RevertStatus` / `Reverted`, `BookingMessages.CantRevert`.
+- Cooking → Pending sets `started_cooking_at` to null (the kitchen chart and the D38 late cue use the planned times again); the other
+  steps keep it.
+- App: new first row **Status** in the detail sheet's Booking section, with a "↶ Revert to …" `text-btn` (new `undo` icon). Detail sheet
+  only; the list cards have no revert (the footer has no room for a third button). The PIN note now also lists status reverts.
+- **Consequence to know:** cancel (D22) and pickup change (D35) test the *current* statuses, so reverting a Cooked item makes the order
+  cancellable and its pickup editable again. That is intended, not blocked.
+- Tests: `RevertStatusTests` (every step, no-PIN, stale screen, locked, unknown booking, Pending/Cancelled refused, 3-minute window,
+  start time cleared/kept, audit, events, cancel re-opens, money untouched, prompt text).
+- Check on the phone: Cooking booking → Status row → Revert → PIN → back to Pending (late cue returns if the ideal start has passed);
+  a second revert within 3 minutes doesn't ask; Cooked → Cooking makes "Cancel order" appear; Pending and Cancelled show no link.
+
 ## Working agreements (from CLAUDE.md, repeated because they matter)
 
 Build phase by phase and finish each checkpoint. Check the decision log before changing behaviour;
-changes get a new `D` row, new questions get the next `Q` number (next free: Q40 / D39). Add tests
+changes get a new `D` row, new questions get the next `Q` number (next free: Q40 / D40). Add tests
 for every rule touched, with real SQLite. Money is `long` centavos; times are UTC `DateTime`,
 "today" comes from `IBusinessCalendar` (Asia/Manila). Never log the PIN, its hash or the recovery code.

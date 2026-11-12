@@ -164,6 +164,40 @@ public sealed class OrderService(IBookingStore store, IAppLock appLock, IChangeN
         return true;
     }
 
+    /// <summary>
+    /// Moves one booking one step back (D39): Cooking → Pending, Cooked → Cooking, Completed → Cooked. Needs a Bookings PIN
+    /// confirmation. Refuses with <see cref="StaleStateException"/> when the booking is no longer in
+    /// <paramref name="expectedStatus"/>; Pending and Cancelled have no step back. Going back to Pending clears
+    /// <c>started_cooking_at</c>; the other steps leave it alone. Cancel and pickup change follow the new status (D22, D35).
+    /// Returns the new status.
+    /// </summary>
+    public async Task<ItemStatus> RevertStatusAsync(string bookingId, ItemStatus expectedStatus, PinConfirmation? confirmation, CancellationToken ct = default)
+    {
+        appLock.EnsureUnlocked();
+        appLock.EnsureConfirmed(confirmation, PinScope.Bookings);
+        var previous = ItemStatusRules.Previous(expectedStatus) ?? throw new ValidationException(BookingMessages.CantRevert);
+        var key = await store.FindOrderKeyAsync(bookingId, ct) ?? throw new StaleStateException(BookingMessages.OrderGone);
+
+        var pickup = await store.MutateOrderAsync(key, order =>
+        {
+            var item = order.Items.SingleOrDefault(i => i.BookingId == bookingId)
+                ?? throw new StaleStateException(BookingMessages.OrderGone);
+            if (item.Status != expectedStatus)
+                throw new StaleStateException(BookingMessages.AlreadyAtStatus(bookingId, ItemStatusRules.Label(item.Status)));
+
+            var clearedStart = previous == ItemStatus.Pending ? item.StartedCookingAt : null;
+            item.Status = previous;
+            if (previous == ItemStatus.Pending) item.StartedCookingAt = null;
+            var audit = AuditLog.Create(AuditActions.StatusReverted, "item", bookingId, clock.UtcNow,
+                new { orderKey = order.Key, from = ItemStatusRules.Label(expectedStatus), to = ItemStatusRules.Label(previous), clearedStartedCookingAt = clearedStart });
+            return new OrderMutation<DateTime>(order.PickupAt, [audit]);
+        }, ct);
+
+        changes.NotifyOrderChanged(key);
+        changes.NotifyBookingsChanged(calendar.DateOf(pickup));
+        return previous;
+    }
+
     private static void EnsureNotCancelled(Order order)
     {
         if (ItemStatusRules.IsFullyCancelled(order.Items.Select(i => i.Status)))

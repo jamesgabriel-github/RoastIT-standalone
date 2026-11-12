@@ -317,6 +317,10 @@ are shared.
 
 Pending → Cooking stamps `started_cooking_at` (UTC now).
 
+**Revert (D39):** one step back from any status except Pending and Cancelled — Cooking → Pending, Cooked → Cooking,
+Completed → Cooked. Cancelled can't be reverted. Cooking → Pending clears `started_cooking_at`. Only from the detail sheet
+(§8.1).
+
 ### 7.4 Quick-advance confirmation
 
 From a list card only:
@@ -392,6 +396,13 @@ status pill.
 Section label *BOOKING*. Rows (label left muted, value right bold, 9 px
 padding, divider between):
 
+- **Status** (first row, D39): the status pill, with a small **↶ Revert to {previous}** link next to the label on Cooking,
+  Cooked and Completed bookings (*Revert to Pending / Cooking / Cooked*). No link on Pending or Cancelled. Tap: the Bookings
+  PIN prompt (3-minute window) — *Move 261008-001 (Lechon Chicken) back from Cooking to Pending. Its cooking start time
+  (Oct 8 · 5:30 PM) will be cleared.* → **Revert** (the second sentence only for Cooking → Pending). After the PIN,
+  `RevertStatusAsync` re-checks the status: if it changed meanwhile, nothing is reverted and a toast says so. Otherwise the
+  toast is *261008-001 reverted to Pending* and the sheet stays open. A Pending booking that is past its ideal start shows
+  the late cue again straight away. Audit `item.status_reverted`.
 - Product
 - Cooking time
 - **Start cooking by** (Pending bookings only, D38): the ideal start (§7.5),
@@ -756,6 +767,7 @@ late-to-start warning uses (§7.5).
 | Discount remaining balance | `OrderService.WriteOffBalanceAsync` | Bookings (3 min) | `order.balance_waived` | `OrderChanged` |
 | Cancel order / booking | `OrderService.CancelOrderAsync` | Bookings (3 min) | `order.cancelled` | `OrderChanged`, `BookingsChanged` |
 | Change pickup time | `OrderService.SetPickupAsync` | Bookings (3 min) | `order.pickup_changed` | `OrderChanged`, `BookingsChanged` (old and new date) |
+| Revert status (detail) | `OrderService.RevertStatusAsync(id, expected, confirmation)` | Bookings (3 min) | `item.status_reverted` | `OrderChanged`, `BookingsChanged` |
 | List, counts, strip and calendar dots | Booking queries | — | — | — |
 | Dashboard | `DashboardService` | — | — | — |
 
@@ -916,6 +928,12 @@ late-to-start warning uses (§7.5).
       paid money.
 - [ ] Cancel is refused once anything is cooked or completed (also when
       it changes while the prompt is open).
+- [ ] The Status row shows *Revert to Pending / Cooking / Cooked* on Cooking / Cooked / Completed bookings and no link on
+      Pending or Cancelled; the list cards have no revert.
+- [ ] Revert asks for the PIN (not again within 3 minutes), moves exactly one step back, and clears the cooking start time
+      only for Cooking → Pending (the Kitchen load chart and the late cue then use the planned times).
+- [ ] Reverting a Cooked booking makes *Cancel* and the pickup *Edit* available again; if the status changed while the PIN
+      prompt was open, nothing is reverted.
 - [ ] *Edit* next to Pickup shows only while the order can still be cancelled (nothing cooked or completed); saving asks for the
       PIN (not again within 3 minutes), moves every booking in the order and keeps the IDs; an unchanged time asks for nothing;
       the list, strip dots and Dashboard follow the new date.

@@ -429,8 +429,8 @@ public static class OrderMath
 
 ### 7.3 Item status
 
-- Forward only, one step at a time: `Pending → Cooking → Cooked →
-  Completed`.
+- Forward one step at a time: `Pending → Cooking → Cooked →
+  Completed`. A mis-tap can be undone one step back (D39, below).
 - `pending → cooking` stamps `started_cooking_at = now (UTC)`.
 - `AdvanceStatusAsync(bookingId, expectedStatus)` refuses if the item is
   no longer in `expectedStatus`. This protects against double taps and
@@ -438,6 +438,19 @@ public static class OrderMath
 - UI: advancing from a **list card asks for confirmation** ("Mark booking
   261009-001 as Cooking?"). Advancing from the **detail sheet is
   immediate**.
+
+**Reverting a status (D39)** is per item, one step back, from the detail sheet only (no revert on list cards).
+- `OrderService.RevertStatusAsync(bookingId, expectedStatus, confirmation)`: `Cooking → Pending`, `Cooked → Cooking`,
+  `Completed → Cooked` (`ItemStatusRules.Previous`). Pending has no step back, and **Cancelled can't be reverted**
+  (cancelling is per order, so undoing it would be a separate "un-cancel" feature, not built).
+- Needs a Bookings PIN confirmation (3-minute window, §9.5). Refuses if the item is no longer in `expectedStatus`
+  (`StaleStateException`, nothing changes).
+- `Cooking → Pending` **clears `started_cooking_at`**, so the kitchen chart and the late-to-start cue (D38) use the planned
+  times again. The other steps leave it as it is.
+- The cancel and pickup-change tests (D22, D35) look at the *current* statuses, so reverting a Cooked item makes the order
+  cancellable and its pickup editable again.
+- Audit `item.status_reverted` (target = booking ID; from, to, and the cleared start time). Events: `OrderChanged`,
+  `BookingsChanged(pickup date)`.
 
 **Cancelling is per order, never per item.**
 - `OrderService.CancelOrderAsync(orderKey)` sets **every item in the
@@ -683,6 +696,7 @@ public async Task RecordPaymentAsync(Guid orderKey, long amount, PinConfirmation
 | Bookings | Discount remaining balance | "Waive the remaining ₱150 for Diego Santos (261008-003)." → **Waive** | **3 minutes** |
 | Bookings | Cancel booking / Cancel order (whole order, §7.3) | "Cancel the whole order for The Garden Events Co.: 2 bookings (261009-001, 261009-002)." → **Confirm** | **3 minutes** |
 | Bookings | Change pickup time (whole order, D35) | "Move the pickup for Diego Santos (261008-002) to Nov 9 · 5:00 PM." → **Move** | **3 minutes** |
+| Bookings | Revert status (one booking, D39) | "Move 261008-001 (Lechon Chicken) back from Cooking to Pending. Its cooking start time (Oct 8 · 5:30 PM) will be cleared." → **Revert** | **3 minutes** |
 | Settings | Export data | "Export all bookings, payments and the menu to a backup file." → **Export** | No, every time |
 | Settings | Import data | "Replace all data on this device with roastline-backup-….roastline." → **Replace** | No, every time |
 
@@ -691,7 +705,7 @@ Behavior:
   action, and a ₱0 payment just closes the editor.
 - **The prompt:** a bottom sheet with a lock icon, "Enter your PIN to
   continue", the one-line summary and a keypad. Bookings prompts add
-  "Payments, write-offs, pickup changes and cancellations won't ask again for 3 minutes."
+  "Payments, write-offs, pickup changes, cancellations and status reverts won't ask again for 3 minutes."
 - **Cancel, back or tapping outside** saves nothing and leaves the form or
   editor open.
 - **The 3-minute window:**
@@ -818,7 +832,10 @@ public interface IAppLock   // full contract: src/RoastIT.Core/Abstractions/IApp
   compact row.
 - **Detail sheet**
   - **Header:** back, booking ID, status pill.
-  - **Booking:** product, weight, cooking time, pickup. The pickup row has
+  - **Booking:** status, product, weight, cooking time, pickup. The **Status**
+    row shows the pill, with a "↶ Revert to {previous}" link (D39) on Cooking,
+    Cooked and Completed bookings (none on Pending or Cancelled). It asks for
+    the Bookings PIN (§9.5). The pickup row has
     an **Edit** link (D35) that opens the New booking pickup picker inline
     ("Moves every booking in this order. Booking IDs stay the same."),
     with Cancel / Save pickup. It shows only while nothing in the order is
@@ -1122,6 +1139,10 @@ with `Data Source=:memory:` kept open, or a temp file):
   - lockout after 5 tries, persisted across restarts
   - the Menu confirmation is single-use
   - the Bookings window expires after 3 minutes and is cleared by `Lock()`
+- Revert status (D39): `Cooking → Pending`, `Cooked → Cooking`, `Completed → Cooked`; Pending and Cancelled refused; refused
+  without a Bookings PIN, while locked, and when `expectedStatus` is stale (nothing changes); `Cooking → Pending` clears
+  `started_cooking_at`, the other steps keep it; audited as `item.status_reverted`; a reverted Cooked item makes the order
+  cancellable and its pickup editable again; money and the other bookings are untouched.
 - Cancel order: cancels every item; refused when any item is cooked or
   completed (checked at save time); refused without a Bookings PIN
   confirmation; a fully cancelled order drops out of revenue, collected
@@ -1384,6 +1405,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D36 | **The date strip marks days with bookings with an orange dot, not a count** (owner's request), the same dot the calendar sheet already uses: 5 px, accent, at the bottom of the tile (white on the selected tile), hidden when the day has no bookings. The tile's accessible label still carries the count (*..., 3 bookings*). *(Replaces the count badge in the Phase 3 date strip.)* | 2026-11-08 | §9.5, bookings spec §3 |
 | D37 | **Switching to another app no longer locks; the app locks when it is closed or after 30 minutes idle** (owner's request). Leaving the foreground (Home, app switcher, a call, the file picker or a share sheet) does nothing to the lock. The app locks when its window is destroyed (closed with Back or swiped away; a killed process always starts locked), and after **30 minutes** without taps. Time spent in another app counts as idle time, and coming back checks it straight away. *(Replaces D6's "every reopen" and "10 minutes"; this also retires `ExternalActivityGuard` from Q11, which is no longer needed.)* | 2026-11-12 | §9.4 |
 | D38 | **A Pending booking that should already be cooking is flagged "late to start"** (owner's request). The ideal start is pickup − the product's cooking time (the Kitchen load chart's rule). Nothing shows before it; from then on the detailed card gets a red stripe, a worded "Late to start · was due 3:00 PM (20 min ago)" line and a primary "Start cooking" button, and the compact row a red stripe and a "Late" tag. Once the pickup itself has passed the wording is "Not started · pickup was … (… ago)". Only Pending bookings are flagged; "Start cooking" clears it. Assumptions in Q39 | 2026-11-12 | §7.5, §10.3, §12 |
+| D39 | **A booking can be reverted one status step** (owner's request): Cooking → Pending, Cooked → Cooking, Completed → Cooked. **Cancelled can't be reverted** (cancelling is per order; un-cancel would be its own feature). Done from the detail sheet's Status row ("↶ Revert to …"); no revert on list cards. Needs a **Bookings PIN confirmation (3-minute window)**, so a second revert inside the window doesn't ask again. Cooking → Pending clears `started_cooking_at`. Because cancel (D22) and pickup change (D35) look at the current statuses, reverting a Cooked item re-opens both. Audited as `item.status_reverted`. *(Replaces "forward only" in §7.3.)* | 2026-11-12 | §7.3, §9.5, §10.3, §12, bookings spec §7.3, §8 |
 
 ---
 

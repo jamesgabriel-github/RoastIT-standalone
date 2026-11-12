@@ -332,6 +332,7 @@
   .tel { color: var(--accent); font-weight: 600; text-decoration: none; }
   .link-row { display: flex; justify-content: flex-end; margin-top: -4px; }
   .link-btn { background: none; border: none; padding: 6px 2px; color: var(--accent); font-weight: 600; font-size: 13px; min-height: 36px; }
+  .text-btn svg { vertical-align: -2px; }
   .text-btn { background: none; border: none; padding: 4px 6px; font-size: 12.5px; font-weight: 600; color: var(--accent); min-height: 32px; }
   .inline-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
   .inline-row { display: flex; gap: 8px; }
@@ -463,8 +464,11 @@
      confirmation, the detail sheet's advance button is still immediate.
    - Automatic CSV backup: one file, "roastline-bookings-48h.csv" — bookings with pickup from
      24 h before to 24 h after the save, rewritten hourly while the app is open. Shown in Settings.
-   - Recording a payment, "Discount remaining balance" and cancelling ask for the PIN first; a
-     correct PIN is remembered for 3 minutes for these Bookings actions.
+   - Recording a payment, "Discount remaining balance", cancelling and reverting a status ask for
+     the PIN first; a correct PIN is remembered for 3 minutes for these Bookings actions.
+   - Revert status (D39): the detail sheet's Status row has "Revert to {previous}", one step back
+     (Cooking → Pending, Cooked → Cooking, Completed → Cooked). Reverting Cooking → Pending clears
+     the cooking start time. Cancelled bookings can't be reverted.
    - Cancelling always cancels the whole order (all its items), and only while none of them
      is cooked or completed.
    - Detail and New booking open as full-screen sheets (side panel on tablets).
@@ -518,6 +522,8 @@
   const STATUS_ORDER = ['pending', 'cooking', 'cooked', 'completed', 'cancelled'];
   const NEXT_STATUS = { pending: 'cooking', cooking: 'cooked', cooked: 'completed' };
   const NEXT_ACTION_LABEL = { pending: 'Start cooking', cooking: 'Mark cooked', cooked: 'Mark completed' };
+  // Revert (D39): one step back, detail sheet only, Bookings PIN. Cancelled has no previous status.
+  const PREV_STATUS = { cooking: 'pending', cooked: 'cooking', completed: 'cooked' };
   const STATUS_CHIP_ORDER = ['all', 'pending', 'cooking', 'cooked', 'completed', 'cancelled'];
 
   const SORT_FIELDS = [
@@ -691,6 +697,7 @@
     person: '<circle cx="10" cy="7" r="3"></circle><path d="M4 16.5c0-3 2.7-5 6-5s6 2 6 5"></path>',
     sortAsc: '<line x1="10" y1="16" x2="10" y2="4"></line><polyline points="5,9 10,4 15,9"></polyline>',
     sortDesc: '<line x1="10" y1="4" x2="10" y2="16"></line><polyline points="5,11 10,16 15,11"></polyline>',
+    undo: '<polyline points="7,4.5 3.5,8 7,11.5"></polyline><path d="M3.5 8h8a4.5 4.5 0 010 9H9"></path>',
     alert: '<path d="M10 3.2l7.2 12.6H2.8z"></path><line x1="10" y1="8.3" x2="10" y2="11.4"></line><line x1="10" y1="13.9" x2="10" y2="13.95"></line>',
     sliders: '<line x1="4" y1="6" x2="16" y2="6"></line><line x1="4" y1="14" x2="16" y2="14"></line><circle cx="8" cy="6" r="2" fill="var(--surface-2)"></circle><circle cx="13" cy="14" r="2" fill="var(--surface-2)"></circle>'
   };
@@ -849,7 +856,8 @@
   // ---------------------------------------------------------------------------------
   // Asked before: adding a product, saving product edits, activating/deactivating a
   // product (Menu — asked every time), and recording a payment or using "Discount remaining
-  // balance" or cancelling (Bookings — a correct PIN is remembered for 3 minutes, via opts.rememberMs).
+  // balance", cancelling or reverting a status (Bookings — a correct PIN is remembered for 3
+  // minutes, via opts.rememberMs).
   // The action only runs after the correct PIN. 5 wrong tries → 30-second wait, same rule
   // as the lock screen. The remembered window is in memory only, so it ends when the app
   // locks or closes.
@@ -1021,7 +1029,7 @@
             <span class="pin-icon">${icon('<rect x="4" y="9" width="12" height="8.5" rx="2"></rect><path d="M6.5 9V6.5a3.5 3.5 0 017 0V9"></path>', 20)}</span>
             <h2 id="pin-title">Enter your PIN to continue</h2>
             <p class="pin-detail">${esc(p.detail)}</p>
-            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs, pickup changes and cancellations won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
+            ${p.rememberMs ? `<p class="pin-detail" style="font-size:12px;">Payments, write-offs, pickup changes, cancellations and status reverts won't ask again for ${Math.round(p.rememberMs / 60000)} minutes.</p>` : ''}
           </div>
           <div class="pin-dots ${p.shake ? 'pin-shake' : ''}" aria-live="polite" aria-label="${p.entry.length} digits entered">${dots}</div>
           <div class="pin-msg" role="alert">${esc(msg)}</div>
@@ -1248,6 +1256,29 @@
         state.orders = state.orders.map((o) => (o.key === orderKey ? Object.assign({}, o, { pickupAt: value }) : o)); // the whole order moves; IDs stay
         state.pickupDraft = null;
         showToast('Pickup moved to ' + formatDateTime(value));
+        render();
+      });
+    },
+
+    // Revert one status step (D39). Critical action: Bookings PIN, remembered 3 minutes.
+    // Cooking → Pending clears startedCookingAt (the kitchen chart and late cue go back to the
+    // planned times). Checked again after the PIN: if the status changed meanwhile, nothing happens.
+    revertStatus(bookingId) {
+      const it = state.items.find((i) => i.bookingId === bookingId);
+      if (!it || !PREV_STATUS[it.status]) return;
+      const from = it.status, to = PREV_STATUS[from];
+      const detail = 'Move ' + bookingId + ' (' + it.product + ') back from ' + STATUS_META[from].label + ' to ' + STATUS_META[to].label + '.'
+        + (from === 'cooking' && it.startedCookingAt ? ' Its cooking start time (' + formatDateTime(it.startedCookingAt) + ') will be cleared.' : '');
+      requestPin({ detail, confirmLabel: 'Revert', rememberMs: BOOKING_PIN_REMEMBER_MS }, () => {
+        const current = state.items.find((i) => i.bookingId === bookingId);
+        if (!current || current.status !== from) { showToast("Not reverted — this booking's status changed."); render(); return; }
+        state.items = state.items.map((i) => {
+          if (i.bookingId !== bookingId) return i;
+          const next = Object.assign({}, i, { status: to });
+          if (from === 'cooking') delete next.startedCookingAt;
+          return next;
+        });
+        showToast(bookingId + ' reverted to ' + STATUS_META[to].label);
         render();
       });
     },
@@ -1623,6 +1654,7 @@
         customer: customerLabel(order),
         phone: order && order.phone ? order.phone : '',
         statusLabel: meta.label, statusColor: meta.css,
+        revertLabel: PREV_STATUS[selectedItem.status] ? 'Revert to ' + STATUS_META[PREV_STATUS[selectedItem.status]].label : '', // D39
         totalLabel: order ? formatMoney(order.totalAmount) : '—',
         paidLabel: order ? formatMoney(order.amountPaid) : '—',
         balanceLabel: formatMoney(balance),
@@ -1960,6 +1992,7 @@
         <div class="sheet-body" data-scroll-key="detail-${d.id}">
           <section class="card">
             <p class="dsec-title">Booking</p>
+            <div class="drow"><span class="k">Status${d.revertLabel ? ` <button type="button" class="text-btn" data-action="revert-status" data-id="${d.id}">${icon(ICONS.undo, 13)} ${d.revertLabel}</button>` : ''}</span><span class="v">${pill(d.statusLabel, d.statusColor)}</span></div>
             <div class="drow"><span class="k">Product</span><span class="v">${esc(d.product)}</span></div>
             <div class="drow"><span class="k">Cooking time</span><span class="v">${d.cookingTimeLabel}</span></div>
             ${d.start ? `<div class="drow"><span class="k">Start cooking by</span><span class="v" data-region="detail-start">${renderDetailStart(d.start)}</span></div>` : ''}
@@ -2240,6 +2273,7 @@
       case 'cancel-confirm': Actions.cancelConfirm(); break;
       case 'confirm-advance': Actions.confirmAdvance(); break;
       case 'advance': Actions.advanceStatus(d.id); break;
+      case 'revert-status': Actions.revertStatus(d.id); break;
       case 'cancel-order': Actions.cancelOrder(d.id); break;
       case 'open-discount': Actions.openDiscountEditor(d.orderKey); break;
       case 'cancel-discount': Actions.cancelDiscountEdit(); break;

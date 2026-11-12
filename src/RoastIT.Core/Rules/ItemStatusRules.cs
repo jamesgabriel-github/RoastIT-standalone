@@ -14,6 +14,18 @@ public static class ItemStatusRules
         _ => null,
     };
 
+    /// <summary>
+    /// One step back, to correct a mis-tap (D39): Cooking → Pending, Cooked → Cooking, Completed → Cooked. Pending has
+    /// nowhere to go back to, and Cancelled can't be reverted (cancelling applies to the whole order).
+    /// </summary>
+    public static ItemStatus? Previous(ItemStatus status) => status switch
+    {
+        ItemStatus.Cooking => ItemStatus.Pending,
+        ItemStatus.Cooked => ItemStatus.Cooking,
+        ItemStatus.Completed => ItemStatus.Cooked,
+        _ => null,
+    };
+
     public static string Label(ItemStatus status) => status switch
     {
         ItemStatus.Pending => "Pending",
