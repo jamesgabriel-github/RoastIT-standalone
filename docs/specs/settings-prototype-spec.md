@@ -78,7 +78,7 @@ Save button.
 
 **Caption under the card** (12.5 px muted):
 
-*Roastline locks itself whenever the app is reopened, and after 10
+*Roastline locks itself when the app is closed, and after 30
 minutes without use. Your PIN is also asked before adding or editing menu
 items (every time), before recording a payment, waiving a remaining
 balance or cancelling a booking (remembered for 3 minutes), and every

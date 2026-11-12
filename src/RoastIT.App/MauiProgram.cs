@@ -46,7 +46,6 @@ public static class MauiProgram
 		builder.Services.AddScoped<ProductService>();
 
 		// Settings → Data (Phase 4): export/import (plan §10.5) and the automatic CSV backup (§10.6, Android only).
-		builder.Services.AddSingleton<ExternalActivityGuard>();
 		builder.Services.AddSingleton<IBackupStore>(sp => new SqliteBackupStore(
 			sp.GetRequiredService<IDbContextFactory<RoastItDbContext>>(),
 			dbPath,

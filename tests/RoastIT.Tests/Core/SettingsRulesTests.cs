@@ -1,11 +1,10 @@
-using RoastIT.App.Services;
 using RoastIT.Core.Abstractions;
 using RoastIT.Core.Rules;
 using RoastIT.Core.Validation;
 
 namespace RoastIT.Tests.Core;
 
-/// <summary>Settings texts and rules (settings spec §4, §7) and the system-screen lock guard (Q11).</summary>
+/// <summary>Settings texts and rules (settings spec §4, §7).</summary>
 public class SettingsRulesTests
 {
     private static readonly DateTime Now = new(2026, 11, 7, 3, 0, 0, DateTimeKind.Utc);
@@ -63,73 +62,5 @@ public class SettingsRulesTests
         Assert.Equal("2 columns hidden on the Bookings list.", BookingColumnFields.HiddenCaption(cols));
         Assert.Equal(cols, BookingColumns.Parse(cols.ToJson())); // what Settings saves is what Bookings reads
         Assert.Contains("\"status\":false", cols.ToJson());
-    }
-
-    // ---- ExternalActivityGuard (Q11) ----
-
-    private sealed class Clock : IClock
-    {
-        public DateTime UtcNow { get; set; } = Now;
-    }
-
-    [Fact]
-    public void Leaving_the_app_without_an_expectation_locks()
-    {
-        var guard = new ExternalActivityGuard(new Clock());
-
-        Assert.False(guard.OnStopped());
-        Assert.False(guard.OnResumed());
-    }
-
-    [Fact]
-    public void The_expected_picker_trip_does_not_lock_and_the_next_one_does()
-    {
-        var clock = new Clock();
-        var guard = new ExternalActivityGuard(clock);
-
-        guard.Expect();
-        Assert.True(guard.OnStopped());
-        guard.Cancel(); // the picker returned before Resumed: must not undo the trip
-        Assert.True(guard.OnResumed());
-        guard.OnActivated();
-
-        Assert.False(guard.OnStopped()); // pressing Home afterwards locks as usual
-        Assert.False(guard.OnResumed());
-    }
-
-    [Fact]
-    public void A_share_sheet_dismissed_without_leaving_the_app_forgets_the_expectation()
-    {
-        var guard = new ExternalActivityGuard(new Clock());
-
-        guard.Expect();
-        guard.OnActivated(); // paused and resumed only
-
-        Assert.False(guard.OnStopped());
-    }
-
-    [Fact]
-    public void Staying_away_longer_than_five_minutes_locks()
-    {
-        var clock = new Clock();
-        var guard = new ExternalActivityGuard(clock);
-
-        guard.Expect();
-        Assert.True(guard.OnStopped());
-        clock.UtcNow += ExternalActivityGuard.MaxAway + TimeSpan.FromSeconds(1);
-
-        Assert.False(guard.OnResumed());
-    }
-
-    [Fact]
-    public void An_expectation_that_was_never_used_expires()
-    {
-        var clock = new Clock();
-        var guard = new ExternalActivityGuard(clock);
-
-        guard.Expect();
-        clock.UtcNow += ExternalActivityGuard.MaxAway + TimeSpan.FromSeconds(1);
-
-        Assert.False(guard.OnStopped());
     }
 }

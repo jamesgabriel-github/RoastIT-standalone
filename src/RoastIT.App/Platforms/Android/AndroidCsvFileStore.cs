@@ -14,7 +14,7 @@ namespace RoastIT.App;
 /// file) the app's own row is looked up by name and folder, or a new one is inserted. After a reinstall the old file
 /// belongs to the old install, so Android creates "roastline-bookings-48h (1).csv" instead (a known limit).
 /// </summary>
-public sealed class AndroidCsvFileStore(PreferencesStore preferences, ExternalActivityGuard guard, ILogger<AndroidCsvFileStore> logger)
+public sealed class AndroidCsvFileStore(PreferencesStore preferences, ILogger<AndroidCsvFileStore> logger)
     : ICsvFileStore, ICsvFileShare
 {
     private const string MimeType = "text/csv";
@@ -95,7 +95,6 @@ public sealed class AndroidCsvFileStore(PreferencesStore preferences, ExternalAc
         var chooser = Intent.CreateChooser(view, "Open bookings CSV")!;
         chooser.AddFlags(ActivityFlags.GrantReadUriPermission);
 
-        guard.Expect();
         try
         {
             activity.StartActivity(chooser);
@@ -103,7 +102,6 @@ public sealed class AndroidCsvFileStore(PreferencesStore preferences, ExternalAc
         }
         catch (ActivityNotFoundException)
         {
-            guard.Cancel();
             return Task.FromResult(false);
         }
     }

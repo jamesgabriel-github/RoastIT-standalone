@@ -121,7 +121,7 @@ tests/RoastIT.Tests  xUnit against Core + Data with real SQLite (in-memory or a 
 - PIN only, 4–6 digits, stored hashed in `app_lock`.
 - A recovery code is shown once.
 - 5 wrong tries → 30-second wait.
-- The app locks on every reopen and after 10 minutes idle.
+- The app locks when it is closed and after 30 minutes idle (D37). Switching to another app does not lock.
 
 **Backups**
 - **Export / Import** (`.roastline` = a SQLite copy):

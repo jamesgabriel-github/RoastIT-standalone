@@ -3,12 +3,13 @@ using RoastIT.Core.Abstractions;
 namespace RoastIT.Core.Services;
 
 /// <summary>
-/// Locks the app after 10 minutes without taps (plan §9.4). The UI reports activity
-/// (<see cref="NotifyActivity"/>) and a timer calls <see cref="CheckAndLock"/>.
+/// Locks the app after 30 minutes without taps (plan §9.4, D37). The UI reports activity
+/// (<see cref="NotifyActivity"/>) and a timer calls <see cref="CheckAndLock"/>. Time spent in another app counts as
+/// idle time, so the app also calls <see cref="CheckAndLock"/> when it comes back to the foreground.
 /// </summary>
 public sealed class IdleMonitor : IDisposable
 {
-    public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(30);
 
     private readonly IClock _clock;
     private readonly IAppLock _appLock;

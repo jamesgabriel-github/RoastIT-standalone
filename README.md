@@ -29,7 +29,7 @@ Highlights:
 - **Payments are additive**, with discounts, a "waive the small remaining
   balance" shortcut, and an audit trail.
 - **Kitchen load chart** showing how many items are cooking at each hour of the day.
-- **PIN lock:** 4–6 digits, locks on every reopen and after 10 minutes idle;
+- **PIN lock:** 4–6 digits, locks when the app is closed and after 30 minutes idle (switching apps does not lock);
   critical actions (menu edits, payments, cancels, export/import) ask for the PIN again.
 - **Backups:** manual export/import of a `.roastline` file (the PIN never
   travels with it), plus an hourly CSV of bookings picked up within ±24 hours.

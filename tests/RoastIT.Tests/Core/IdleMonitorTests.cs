@@ -22,10 +22,10 @@ public class IdleMonitorTests : IDisposable
     }
 
     [Fact]
-    public void The_app_locks_after_ten_minutes_without_activity()
+    public void The_app_locks_after_thirty_minutes_without_activity()
     {
         _idle.NotifyActivity();
-        _fx.Clock.Advance(TimeSpan.FromMinutes(9) + TimeSpan.FromSeconds(59));
+        _fx.Clock.Advance(TimeSpan.FromMinutes(29) + TimeSpan.FromSeconds(59));
         Assert.False(_idle.CheckAndLock());
         Assert.False(_lock.IsLocked);
 
@@ -35,15 +35,28 @@ public class IdleMonitorTests : IDisposable
     }
 
     [Fact]
-    public void Activity_restarts_the_ten_minutes()
+    public void Activity_restarts_the_thirty_minutes()
     {
         _idle.NotifyActivity();
-        _fx.Clock.Advance(TimeSpan.FromMinutes(8));
+        _fx.Clock.Advance(TimeSpan.FromMinutes(25));
         _idle.NotifyActivity();
-        _fx.Clock.Advance(TimeSpan.FromMinutes(8));
+        _fx.Clock.Advance(TimeSpan.FromMinutes(25));
 
         Assert.False(_idle.CheckAndLock());
         Assert.False(_lock.IsLocked);
+    }
+
+    [Fact]
+    public void Time_spent_in_another_app_counts_as_idle_time()
+    {
+        _idle.NotifyActivity();
+        _fx.Clock.Advance(TimeSpan.FromMinutes(20)); // switched away: no lock, nothing reports activity
+        Assert.False(_idle.CheckAndLock());
+        Assert.False(_lock.IsLocked);
+
+        _fx.Clock.Advance(TimeSpan.FromMinutes(11)); // back after 31 minutes in total
+        Assert.True(_idle.CheckAndLock());
+        Assert.True(_lock.IsLocked);
     }
 
     [Fact]

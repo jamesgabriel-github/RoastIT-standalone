@@ -44,7 +44,7 @@ Build state: Android and Windows targets build with 0 errors and
   (FluentValidation; first failing rule in form order, with the field it belongs to), `ProductMessages`,
   `ProductLimits`.
 - `Services/`: `AppLockService` (singleton: locked state, lockout, Menu single-use and
-  Bookings 3-minute confirmations), `IdleMonitor` (10-minute auto-lock), `ProductService`
+  Bookings 3-minute confirmations), `IdleMonitor` (30-minute auto-lock, D37), `ProductService`
   (`ListAsync`, `CreateAsync`, `UpdateAsync`, `SetActiveAsync`; no delete), `ChangeNotifier` (singleton).
 - **Phase 3 additions.** `Enums/ItemStatus` (Pending=0 … Cancelled=4, the pipeline order). `Entities/`: `Order`, `Item`,
   `Payment`, `DailyCounter`. `Abstractions/`: `IBusinessCalendar`, `IBookingStore` (+ `NewOrderDraft`, `OrderMutation<T>`);
@@ -97,8 +97,8 @@ Build state: Android and Windows targets build with 0 errors and
 
 ### `RoastIT.App`
 - `MauiProgram`: DI, Serilog (daily files, 14 kept, in `AppDataDirectory/logs`), startup DB init,
-  unhandled-exception logging. `App.xaml.cs`: applies theme, starts the 15 s idle check, locks the
-  app on `Window.Stopped` and `Window.Resumed`. `MainPage.OnBackButtonPressed` hands Back to
+  unhandled-exception logging. `App.xaml.cs`: applies theme, starts the 15 s idle check (30-minute auto-lock). It locks the
+  app on `Window.Destroying` only (D37); `Window.Resumed` runs an idle check. `MainPage.OnBackButtonPressed` hands Back to
   `BackNavigationService`.
 - `Services/`: `PreferenceKeys`, `PreferencesStore`, `ThemeMode`/`ThemeService`,
   `BackNavigationService` (layer stack: PageBack < FullSheet < BottomSheet < Dialog < PinPrompt),
@@ -123,7 +123,7 @@ Build state: Android and Windows targets build with 0 errors and
 - **Phase 4 additions.** `Pages/Settings.razor` is complete (Security, Data with the 7-day reminder, CSV card, Appearance
   with the spec's two captions, Columns to show with *Show all*, version + build). `Components/Settings/`: `ExportSheet`,
   `ImportSheet` (states A/B, existing-bookings warning, inline errors), `CsvBackupCard` (saved / never / failed-retry /
-  unsupported, Share/Open, reinstall note). `Services/`: `ExternalActivityGuard` (Q11; MAUI-free, linked into tests),
+  unsupported, Share/Open, reinstall note). `Services/`: `ExternalActivityGuard` (Q11; removed again by D37),
   `DataTransferService` (cache folder, `Share`, `FilePicker`, `lastExportAt`), `CsvFileStores.cs` (`ICsvFileShare`,
   `UnsupportedCsvFileStore` for Windows), `PreferencesCsvBackupLog`; `PreferencesStore` gained `LastExportAt`, `LastCsvSave`,
   `CsvUri` (new key `lastCsvCount`). `Platforms/Android/AndroidCsvFileStore` (MediaStore: remembered URI → look up own row →
@@ -148,7 +148,7 @@ inspection refusals incl. corrupt / newer schema / WAL-mode file, import keeps t
 swap restore, force-close recovery at start, pruning), `Core/CsvBackupTests` (writer, ±24 h across Manila midnight, hourly
 rule, no save on booking changes, failing store, locked, unsupported), `Core/ScopedQueriesTests` (SQL Dashboard equals the
 Phase 3 in-memory `Dashboard.Build` for all dates and four days, date-scoped lists, Manila day boundary, chips, badges,
-indexes), `Core/SettingsRulesTests` (texts, columns, `ExternalActivityGuard`), `Perf/TenYearDataTests` (opt-in, below).
+indexes), `Core/SettingsRulesTests` (texts, columns), `Perf/TenYearDataTests` (opt-in, below).
 
 ## How the main pieces fit
 
@@ -202,7 +202,7 @@ indexes), `Core/SettingsRulesTests` (texts, columns, `ExternalActivityGuard`), `
   can no longer appear. Not yet checked on a device: light/dark at phone width, and typing non-digits in the minutes field.
 - **Phase 4.** Open questions Q29–Q37 added to plan §15.1 (export counts on share-sheet open, exact 7-day reminder, cancelled
   bookings counted, any file type in the picker, no CSV before Android 10, CSV column contents, import safety copies and the
-  cut-off swap, "all dates" with years of data, errors inline in the sheets); Q11 is now implemented (`ExternalActivityGuard`).
+  cut-off swap, "all dates" with years of data, errors inline in the sheets); Q11 was implemented as `ExternalActivityGuard`, then retired by D37 (switching apps no longer locks).
   Their current assumptions are implemented. **Q36 was decided by the owner as D32**: Bookings opens on today, and "all dates"
   (list, chips, Dashboard) means today ± 6 months, through `ScheduleWindow.RangeUtc`. Older bookings are still in the database
   and exports but no longer on the Bookings page. Ten-year timing after D32: all-dates list ≈90 ms, all-dates Dashboard ≈60 ms.
@@ -282,7 +282,7 @@ Fresh install (or Clear storage):
 3. 5 wrong PINs: keys disable with a 30 s countdown; force-close during it and reopen: still counting.
 4. Forgot PIN: recovery code (lowercase/spaces OK) → new PIN → new code; old code no longer works.
 5. Settings → Update PIN: Cancel works at each step; completing keeps the same recovery code.
-6. Idle 10 minutes: the app locks.
+6. Idle 30 minutes: the app locks. Switching to another app and back before then does not lock.
 7. Back on Unlock sends the app to the background; on the recovery-code view it does nothing.
 8. Everything renders correctly in dark mode.
 
@@ -400,6 +400,28 @@ Export now has a second button under **Export backup**: *Save to a folder…* (A
 5. Back out of the screen: the sheet stays open, no error, *Last export* unchanged. The next try asks for the PIN again.
 6. Import that saved file on another install (or after clearing data) to confirm it opens.
 7. Back closes the PIN prompt, then the sheet; Home afterwards still locks the app.
+
+## D37 lock on close or 30 minutes idle, not on app switch (owner's request; plan §9.4, D6 replaced)
+
+Switching to another app no longer locks RoastIT. It locks when it is **closed** (`Window.Destroying`; a killed process always starts
+locked) and after **30 minutes** without taps. Time spent in another app counts as idle time, and `Window.Resumed` calls
+`IdleMonitor.CheckAndLock()` so the lock shows the moment the owner returns. The Android target builds; all tests pass, 1 skipped.
+**Not run on a device.**
+
+- Core: `IdleMonitor.Timeout` is 30 minutes.
+- App: `App.xaml.cs` no longer locks on `Window.Stopped`/`Resumed`; `Window.Destroying` locks. `ExternalActivityGuard` (Q11) was
+  deleted along with its `Expect`/`Cancel` calls in `DataTransferService` and `AndroidCsvFileStore`, its DI line and its test link.
+  The CSV foreground loop still stops on `Stopped` and restarts on `Resumed` (D27).
+- Text: the Settings caption now says "locks itself when the app is closed, and after 30 minutes without use". Specs and the
+  settings prototype match.
+- Tests: `IdleMonitorTests` use 30 minutes, plus a new test that time in another app counts as idle. The `ExternalActivityGuard`
+  tests were removed.
+- Check on the phone:
+  1. Unlock, press Home, come back after a minute: still unlocked.
+  2. Unlock, press Back until the app closes, reopen: Unlock screen.
+  3. Unlock, swipe the app away from recents, reopen: Unlock screen.
+  4. Unlock, leave it untouched for 30 minutes (on screen, or in another app): Unlock screen.
+  5. Settings → Import and Export (picker and share sheet) return to the app unlocked.
 
 ## Next: Phase 5 — Release (in progress; plan §14, §13 Phase 5)
 

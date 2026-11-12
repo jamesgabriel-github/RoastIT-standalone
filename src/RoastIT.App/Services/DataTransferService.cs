@@ -10,13 +10,11 @@ public sealed record PickedBackup(string FileName, string LocalPath, BackupInspe
 
 /// <summary>
 /// The platform side of Settings → Data (settings spec §4.4): the cache folder, the share sheet and the file picker.
-/// The rules and the PIN check are in <see cref="BackupService"/>. Opening a system screen goes through
-/// <see cref="ExternalActivityGuard"/> so it doesn't lock the app (Q11).
+/// The rules and the PIN check are in <see cref="BackupService"/>. Leaving for a system screen doesn't lock the app (D37).
 /// </summary>
 public sealed class DataTransferService(
     BackupService backups,
     PreferencesStore preferences,
-    ExternalActivityGuard guard,
     IBackupFileSaver saver,
     ILogger<DataTransferService> logger)
 {
@@ -34,7 +32,6 @@ public sealed class DataTransferService(
     {
         var exported = await MakeFileAsync(confirmation);
 
-        guard.Expect();
         try
         {
             await Share.Default.RequestAsync(new ShareFileRequest
@@ -45,7 +42,6 @@ public sealed class DataTransferService(
         }
         catch (Exception ex)
         {
-            guard.Cancel();
             logger.LogWarning(ex, "Share sheet failed to open for the backup file");
             throw;
         }
@@ -67,7 +63,6 @@ public sealed class DataTransferService(
         if (!saver.IsSupported) throw new PlatformNotSupportedException("Saving to a folder is Android only for now.");
         var exported = await MakeFileAsync(confirmation);
 
-        guard.Expect();
         try
         {
             var savedName = await saver.SaveAsync(exported.FileName, exported.Path);
@@ -82,7 +77,6 @@ public sealed class DataTransferService(
         }
         finally
         {
-            guard.Cancel();
             ClearFolder(ExportDir); // the saved copy is the backup; don't leave another one in the cache
         }
     }
@@ -97,7 +91,6 @@ public sealed class DataTransferService(
     public async Task<PickedBackup?> PickAsync()
     {
         FileResult? file;
-        guard.Expect();
         try
         {
             // Any file type: Android often can't map ".roastline" to a MIME type; the content is what gets checked.
@@ -107,10 +100,6 @@ public sealed class DataTransferService(
         {
             logger.LogWarning(ex, "File picker failed");
             return new PickedBackup("", "", new BackupInspection(BackupFileStatus.Unreadable), 0);
-        }
-        finally
-        {
-            guard.Cancel();
         }
         if (file is null) return null;
 

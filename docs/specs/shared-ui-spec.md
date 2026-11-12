@@ -411,4 +411,4 @@ Don't port these.
 | Preferences in browser storage | MAUI `Preferences` (plan §10.4) |
 | Google Fonts | Bundled fonts |
 | Escape key = Back | `OnBackButtonPressed` → `BackNavigationService` |
-| No auto-lock | Lock on resume and after 10 min idle (plan §9.4) |
+| No auto-lock | Lock when closed and after 30 min idle; switching apps does not lock (plan §9.4, D37) |

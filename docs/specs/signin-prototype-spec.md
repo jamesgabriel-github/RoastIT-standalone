@@ -19,7 +19,7 @@ forgot PIN and change PIN.
 | Situation | Starting view |
 |---|---|
 | No `app_lock` row (first run, or after reinstall) | **Enter (setup)** |
-| PIN set up and the app is locked (launch, resume, 10 min idle) | **Unlock** |
+| PIN set up and the app is locked (launch after the app was closed, 30 min idle) | **Unlock** |
 | Settings → Update PIN | **Verify (change)** |
 
 **Rules**

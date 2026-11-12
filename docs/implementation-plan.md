@@ -628,11 +628,12 @@ public async Task RecordPaymentAsync(Guid orderKey, long amount, PinConfirmation
 - **Without it,** a forgotten PIN means reinstalling, which erases the
   data unless there's a backup. The screens say this plainly.
 - **Auto-lock:**
-  - **When:** on every reopen or return from the background (MAUI
-    `Window.Resumed` / `Stopped`), and after **10 minutes** without
-    taps.
+  - **When (D37):** when the app is closed (MAUI `Window.Destroying`; a
+    killed process always starts locked), and after **30 minutes**
+    without taps. Switching to another app does **not** lock.
   - **How:** `IdleTimer` resets on any pointer or key event in the main
-    layout.
+    layout. Time spent in another app counts as idle time: `Window.Resumed`
+    calls `IdleMonitor.CheckAndLock()` straight away.
   - **Effect:** locking clears any PIN-confirmation window (§9.5).
 
 ### 9.5 PIN confirmation for critical actions
@@ -1132,7 +1133,7 @@ Each phase ends with a checkpoint that must pass before moving on.
 - A fresh install forces PIN setup and shows the recovery code.
 - Wrong PINs lock for 30 s, and the lockout survives a restart.
 - The recovery code resets the PIN and issues a new code.
-- The app locks on reopen and after 10 minutes.
+- The app locks when closed and after 30 minutes idle (D37); switching apps does not lock.
 - Pages can't write while locked.
 
 ### Phase 2 — Menu
@@ -1268,7 +1269,7 @@ The output is `com.roastit.app-Signed.apk` under
 | Q8 | After unlocking from auto-lock, where does the app open? | **Current assumption: always Bookings** (signin spec §1). Alternative: return to the previous route (open sheets and unsaved forms can't be restored either way) | 2026-11-07 |
 | Q9 | Setup is saved when the owner taps **Save** on the confirm view, before the recovery code is acknowledged. If the app is killed on the recovery-code view, the PIN exists but the owner may not have the code | **Current assumption: accept the risk.** Alternative: save the PIN and code hash only when **Continue** is tapped (signin spec §12.3) | 2026-11-07 |
 | Q10 | Android Back on the lock screen | **Implemented as the spec's suggestions:** Unlock/first-run setup → send the app to the background; change flow → Cancel; Forgot → Back link; recovery-code view → does nothing (signin spec §12.2) | 2026-11-07 |
-| Q11 | Locking on `Window.Stopped`/`Resumed` (D6) will also fire when the **file picker** (Import) or **share sheet** (Export) takes the screen, so the app would be locked mid-import and when returning | **Implemented (Phase 4): `ExternalActivityGuard`.** Just before the picker or a share sheet opens, the app expects one trip away; the next stop/resume within **5 minutes** doesn't lock. Staying away longer, or leaving for anything else afterwards, locks as usual. The idle lock (10 min) still applies. The app stays unlocked after an import (§10.5 step 7) | 2026-11-07 |
+| Q11 | *(Superseded by D37: switching apps no longer locks, so the guard was removed.)* Locking on `Window.Stopped`/`Resumed` (D6) will also fire when the **file picker** (Import) or **share sheet** (Export) takes the screen, so the app would be locked mid-import and when returning | **Implemented (Phase 4): `ExternalActivityGuard`.** Just before the picker or a share sheet opens, the app expects one trip away; the next stop/resume within **5 minutes** doesn't lock. Staying away longer, or leaving for anything else afterwards, locks as usual. The idle lock (10 min) still applies. The app stays unlocked after an import (§10.5 step 7) | 2026-11-07 |
 | Q12 | Menu: **cooking time decimals** (menu spec §10.1). The prototype accepts `1.5`; the column is an integer | **Implemented: whole minutes only.** `1.5`, text and blanks all show "Cooking time must be at least 1 minute." | 2026-11-07 |
 | Q13 | Menu: **price centavos** (menu spec §10.2). The prototype steps by whole pesos | **Implemented: up to 2 decimals** (step 0.01), stored as centavos. A third decimal is rejected with the price message. Display drops ".00" for whole pesos (₱2,200) | 2026-11-07 |
 | Q14 | Menu: **duplicate product names** (menu spec §10.3) | **Implemented: allowed** (as in the prototype). Alternative: warn or block, case-insensitive and trimmed | 2026-11-07 |
@@ -1305,7 +1306,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D3 | **Screens**: Lock, Bookings, Menu, Settings. No user accounts, roles or Admin Manager. Bottom nav: Bookings · Menu · Settings | 2026-11-04 | §1, §10.3 |
 | D4 | **App lock is PIN only** (4–6 digits, no password option), hashed in SQLite | 2026-11-04 | §9.1 |
 | D5 | **Forgotten PIN → recovery code** shown once at setup; a new code is issued after each reset | 2026-11-04 | §9.4 |
-| D6 | **Auto-lock** on every reopen and after 10 minutes idle; 5 wrong tries → 30-second wait | 2026-11-04 | §9.3, §9.4 |
+| D6 | *(Auto-lock part replaced by D37.)* **Auto-lock** on every reopen and after 10 minutes idle; 5 wrong tries → 30-second wait | 2026-11-04 | §9.3, §9.4 |
 | D7 | **PIN for critical actions**: Menu add/edit/activate/deactivate asks **every time**; Bookings record payment, discount remaining balance and cancel order are **remembered 3 minutes** | 2026-11-04 | §9.5 |
 | D8 | **Cancelling always cancels the whole order**; `total_amount` never changes | 2026-11-04 | §7.3 |
 | D9 | **Money stored as integer centavos** (`long`): exactly 2 decimal places, formatted only for display | 2026-11-04 | §6.1 |
@@ -1336,6 +1337,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D34 | **A booking's quantity is a weight in kilos, not a number of bookings** (owner's request). One product line = one booking = one booking ID, with its weight in kilos on it (3.2 kg is one booking). The product's price is per kilo, so a line costs price × kilos. Stored as `items.weight_g` (whole grams). *(Replaces the Phase 3 rule "one item and one ID per unit": quantity 3 used to make 3 bookings.)* | 2026-11-07 | §6.2, §7.1, §7.2, §9, bookings spec §9 |
 | D35 | **A booking's pickup time can be changed** (owner's request). The pickup lives on the order, so one change moves every booking in it; booking IDs don't change (they come from the order date). Needs a **Bookings PIN confirmation (3-minute window)**. Allowed while the order is not cancelled and has no Cooked or Completed item (the same test as cancelling); a Cooking item is fine and keeps its `started_cooking_at`. The new time must be inside the D32 window; a time already past is allowed (the picker warns). Audited as `order.pickup_changed`. Raises `OrderChanged` and `BookingsChanged` for the old and the new date. *(Adds to D7.)* | 2026-11-07 | §7.3, §9.5, bookings spec §8, §12 |
 | D36 | **The date strip marks days with bookings with an orange dot, not a count** (owner's request), the same dot the calendar sheet already uses: 5 px, accent, at the bottom of the tile (white on the selected tile), hidden when the day has no bookings. The tile's accessible label still carries the count (*..., 3 bookings*). *(Replaces the count badge in the Phase 3 date strip.)* | 2026-11-08 | §9.5, bookings spec §3 |
+| D37 | **Switching to another app no longer locks; the app locks when it is closed or after 30 minutes idle** (owner's request). Leaving the foreground (Home, app switcher, a call, the file picker or a share sheet) does nothing to the lock. The app locks when its window is destroyed (closed with Back or swiped away; a killed process always starts locked), and after **30 minutes** without taps. Time spent in another app counts as idle time, and coming back checks it straight away. *(Replaces D6's "every reopen" and "10 minutes"; this also retires `ExternalActivityGuard` from Q11, which is no longer needed.)* | 2026-11-12 | §9.4 |
 
 ---
 
