@@ -94,9 +94,6 @@ else
     /// <summary>The selected date's bookings (or every booking for all dates), with order info filled in. Filtering happens here.</summary>
     [Parameter, EditorRequired] public IReadOnlyList<BookingRow> Rows { get; set; } = [];
 
-    /// <summary>Global counts for the chips (they ignore the date and the search).</summary>
-    [Parameter, EditorRequired] public BookingStatusCounts StatusCounts { get; set; } = new(0, 0, 0, 0, 0, 0);
-
     [Parameter] public EventCallback<BookingRow> OnOpen { get; set; }
     [Parameter] public EventCallback<BookingRow> OnAdvance { get; set; }
     [Parameter] public EventCallback OnOpenSort { get; set; }
@@ -109,23 +106,16 @@ else
 
     private string StatusKey => Scope.StatusFilter?.ToString().ToLowerInvariant() ?? "all";
 
-    // Counts are global: they ignore the date and the search (bookings spec §6.1).
-    private IReadOnlyList<ChipItem> Chips
-    {
-        get
-        {
-            var c = StatusCounts;
-            return
-            [
-                new("all", $"All · {c.All}"),
-                new("pending", $"Pending · {c.Pending}"),
-                new("cooking", $"Cooking · {c.Cooking}"),
-                new("cooked", $"Cooked · {c.Cooked}"),
-                new("completed", $"Completed · {c.Completed}"),
-                new("cancelled", $"Cancelled · {c.Cancelled}"),
-            ];
-        }
-    }
+    // The chips carry no counts (D40); the result count in the meta row says how many bookings match.
+    private static readonly IReadOnlyList<ChipItem> Chips =
+    [
+        new("all", "All"),
+        new("pending", "Pending"),
+        new("cooking", "Cooking"),
+        new("cooked", "Cooked"),
+        new("completed", "Completed"),
+        new("cancelled", "Cancelled"),
+    ];
 
     protected override void OnInitialized()
     {

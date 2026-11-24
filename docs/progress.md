@@ -320,7 +320,7 @@ After installing over the Phase 2 build, the `AddBookingsDomain` migration runs 
    quantity is kilos: two lines of 3.2 kg and 1 kg create two IDs, `YYMMDD-001` and `002`.)* The *Booking created* dialog lists them, stays open until Done, ignores a backdrop tap,
    and Back closes it. Totals and the *Create booking · ₱…* label update while typing without losing focus. The date-time picker
    works on Android (default is now + 5 hours). A blank customer shows as *Walk-in customer*.
-3. **Booking list.** Search finds IDs, products, customers and "walk-in". Chips show global counts. The sort sheet shows the labels
+3. **Booking list.** Search finds IDs, products, customers and "walk-in". Chips show no counts (D40). The sort sheet shows the labels
    in spec §6.4; grouping by date happens only with all dates + Pickup time. Detailed ⇄ Compact (remembered after a restart);
    compact rows show time only when the day is clear; tap expands to a card and the chevron collapses. Multi-booking orders show
    *1 of N* tags in both views.
@@ -382,7 +382,7 @@ lose (or after exporting).
     switching Detailed ⇄ Compact. Desktop numbers for comparison: all-dates list ≈90 ms, all-dates Dashboard ≈60 ms, one day
     ≈1–2 ms.
 11. **D32.** Bookings opens on **Today** (the label reads *Showing Today*, today's tile is selected), also after a restart.
-    Tapping today's tile or *All* shows all dates; with the ten-year file, the all-dates list and the *All · N* chip only hold
+    Tapping today's tile or *All* shows all dates; with the ten-year file, the all-dates list only holds
     bookings from today − 6 months to today + 6 months, and the Dashboard for all dates matches.
 
 ## D33 "Save to a folder…" device check (owner's request after the Phase 4 checkpoint; plan §10.5)

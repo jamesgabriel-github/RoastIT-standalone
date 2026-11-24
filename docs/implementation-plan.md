@@ -512,8 +512,7 @@ public static class OrderMath
 
 - **Search:** booking ID, product name or customer label (so "walk-in"
   finds blank names), case-insensitive, combined with status and date.
-- **Status chips** show **global** counts that ignore the selected date and
-  the search, over the same ±6-month window as "all dates" (D32):
+- **Status chips** carry **no counts** (D40):
   All · Pending · Cooking · Cooked · Completed · Cancelled. The selected
   chip is accent-filled, bold, with a check mark and a soft ring (All is
   selected on first open); the same `FilterChips` component is used on Menu.
@@ -1406,6 +1405,7 @@ The output is `com.roastit.app-Signed.apk` under
 | D37 | **Switching to another app no longer locks; the app locks when it is closed or after 30 minutes idle** (owner's request). Leaving the foreground (Home, app switcher, a call, the file picker or a share sheet) does nothing to the lock. The app locks when its window is destroyed (closed with Back or swiped away; a killed process always starts locked), and after **30 minutes** without taps. Time spent in another app counts as idle time, and coming back checks it straight away. *(Replaces D6's "every reopen" and "10 minutes"; this also retires `ExternalActivityGuard` from Q11, which is no longer needed.)* | 2026-11-12 | §9.4 |
 | D38 | **A Pending booking that should already be cooking is flagged "late to start"** (owner's request). The ideal start is pickup − the product's cooking time (the Kitchen load chart's rule). Nothing shows before it; from then on the detailed card gets a red stripe, a worded "Late to start · was due 3:00 PM (20 min ago)" line and a primary "Start cooking" button, and the compact row a red stripe and a "Late" tag. Once the pickup itself has passed the wording is "Not started · pickup was … (… ago)". Only Pending bookings are flagged; "Start cooking" clears it. Assumptions in Q39 | 2026-11-12 | §7.5, §10.3, §12 |
 | D39 | **A booking can be reverted one status step** (owner's request): Cooking → Pending, Cooked → Cooking, Completed → Cooked. **Cancelled can't be reverted** (cancelling is per order; un-cancel would be its own feature). Done from the detail sheet's Status row ("↶ Revert to …"); no revert on list cards. Needs a **Bookings PIN confirmation (3-minute window)**, so a second revert inside the window doesn't ask again. Cooking → Pending clears `started_cooking_at`. Because cancel (D22) and pickup change (D35) look at the current statuses, reverting a Cooked item re-opens both. Audited as `item.status_reverted`. *(Replaces "forward only" in §7.3.)* | 2026-11-12 | §7.3, §9.5, §10.3, §12, bookings spec §7.3, §8 |
+| D40 | **The Bookings status chips show no counts** (owner's request): All · Pending · Cooking · Cooked · Completed · Cancelled, label only. The result count in the list's meta row still says how many bookings match. The list no longer runs the global status-count query on each refresh. *(Replaces the global chip counts of §7.5 and D32's chip-count wording; the Menu chips keep their counts.)* | 2026-11-24 | §7.5, bookings spec §6.1 |
 
 ---
 

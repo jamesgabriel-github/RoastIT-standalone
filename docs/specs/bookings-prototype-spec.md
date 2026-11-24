@@ -65,7 +65,7 @@ created dialog is open.
 
 - Subscribe to `IChangeNotifier` (`BookingsChanged`, `OrderChanged`,
   `CatalogChanged`).
-- Re-query the list, the counts and the Dashboard after any change, so an
+- Re-query the list, the date counts and the Dashboard after any change, so an
   edit in the detail sheet updates the cards and KPIs behind it.
 - **Late-to-start cues (§7.5) follow the clock.** The Booking list redraws
   once a minute, on the minute, and when the app comes back to the front
@@ -167,12 +167,9 @@ Bottom sheet over everything (z 60/61).
    - Updates the results and count on each keystroke without
      re-rendering the field.
 2. **Status chips:** All · Pending · Cooking · Cooked · Completed ·
-   Cancelled, each with ` · {count}`.
+   Cancelled, label only, **no counts** (D40); the result count in the meta row says how many match.
    - The **selected** chip is accent-filled with white, bold text, a check mark before the label and a soft 2 px ring, so the
      active status is obvious (All is selected by default). `aria-pressed` is true on it.
-   - Counts are **global**: they ignore the selected date and the search, and cover what "all dates" covers, today ± 6 months (D32).
-   - With the seed data: All · 20, Pending · 8, Cooking · 1, Cooked · 1,
-     Completed · 9, Cancelled · 1.
 3. **Meta row** (min 36 px, items spaced apart):
    - Count (muted): *12 bookings* / *1 booking* — the number of result
      rows.
@@ -885,7 +882,7 @@ late-to-start warning uses (§7.5).
 
 **Booking list**
 
-- [ ] Chips show global counts; search finds IDs, products, customers
+- [ ] Chips show no counts; search finds IDs, products, customers
       and "walk-in".
 - [ ] The selected status chip is clearly marked (accent fill, check mark, ring), including All on first open.
 - [ ] Grouping only with all dates + pickup sort.
